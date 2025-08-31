@@ -3,13 +3,14 @@
 
 """
 South Carolina Gamecocks — Football Feed
-Adds /fight-song page. Place your MP3 at static/fight-song.mp3
+- Includes /fight-song page
+- Will auto-collect once on first request if items.json is empty
 """
 
 import os
 import json
-from flask import Flask, render_template, send_file, jsonify, request, abort
 from datetime import datetime, timezone
+from flask import Flask, render_template, send_file, jsonify, request, abort
 
 from feeds import FEEDS, STATIC_LINKS
 import collect as collector  # uses collect.collect() to rebuild items.json
@@ -17,6 +18,7 @@ import collect as collector  # uses collect.collect() to rebuild items.json
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ITEMS_PATH = os.environ.get("ITEMS_PATH", os.path.join(APP_DIR, "items.json"))
 COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional; if set, require header on /collect
+AUTO_COLLECT_ON_EMPTY = os.environ.get("AUTO_COLLECT_ON_EMPTY", "1") == "1"
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -31,6 +33,15 @@ def load_items():
 @app.route("/")
 def index():
     data = load_items()
+
+    # 👇 Safety net: if empty, do a synchronous collect once
+    if AUTO_COLLECT_ON_EMPTY and (not data.get("items")):
+        try:
+            out = collector.collect(ITEMS_PATH)
+            data = out
+        except Exception:
+            pass  # don't 500 the page if a feed hiccups
+
     return render_template(
         "index.html",
         items=data.get("items", []),
@@ -43,7 +54,6 @@ def index():
 
 @app.route("/items.json")
 def items_json():
-    # Always serve a valid JSON file
     if not os.path.exists(ITEMS_PATH):
         with open(ITEMS_PATH, "w", encoding="utf-8") as f:
             json.dump({"updated": None, "items": []}, f)
@@ -64,10 +74,8 @@ def run_collect():
     return jsonify({"ok": True, "count": len(out.get("items", [])), "updated": out.get("updated")})
 
 
-# ----- Fight song page (requires templates/fight_song.html) -----
 @app.route("/fight-song")
 def fight_song():
-    # This route never 500s due to a missing MP3 — it just renders the page.
     return render_template("fight_song.html", team_title="South Carolina Gamecocks — Fight Song")
 
 
