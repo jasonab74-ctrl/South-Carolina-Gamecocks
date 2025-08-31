@@ -24,14 +24,10 @@
 
   <nav class="quick-links">
     {% for link in static_links %}
-      {% if link.url[:1] == '/' %}
-        {% if link.url == '/fight-song' %}
-          <button id="fightSongBtn" type="button" class="pill pill-primary" aria-pressed="false">Play Fight Song</button>
-        {% else %}
-          <a class="pill" href="{{ link.url }}">{{ link.label }}</a>
-        {% endif %}
+      {% if link.url == '/fight-song' %}
+        <button id="fightSongBtn" type="button" class="pill pill-primary" aria-pressed="false">Play Fight Song</button>
       {% else %}
-        <a class="pill" href="{{ link.url }}" target="_blank" rel="noopener">{{ link.label }}</a>
+        <a class="pill" href="{{ link.url }}" {% if link.url.startswith('/') %}{% else %}target="_blank" rel="noopener"{% endif %}>{{ link.label }}</a>
       {% endif %}
     {% endfor %}
   </nav>
@@ -41,7 +37,7 @@
 
     <section id="feed">
       {% if not items %}
-        <div class="empty">No articles yet. Check back soon.</div>
+        <div class="empty" id="empty">Warming up the feed…</div>
       {% endif %}
       {% for it in items %}
       <article class="card">
@@ -67,7 +63,29 @@
   </footer>
 
   <script>
-    // Auto-refresh notice
+    // 1) If items are empty on first load, fire a non-blocking collect
+    (async function boot(){
+      try{
+        const res = await fetch('/items.json',{cache:'no-store'});
+        const data = await res.json();
+        const hasItems = Array.isArray(data.items) && data.items.length > 0;
+        if(!hasItems){
+          // kick a background collect (no token required)
+          await fetch('/collect-now').catch(()=>{});
+          // poll items.json for ~60s until items arrive, then reload once
+          for(let i=0;i<30;i++){
+            await new Promise(r=>setTimeout(r,2000));
+            const r = await fetch('/items.json',{cache:'no-store'});
+            const d = await r.json();
+            if(Array.isArray(d.items) && d.items.length>0){ location.reload(); return; }
+          }
+          const empty = document.getElementById('empty');
+          if(empty){ empty.textContent = 'No articles yet. Check back soon.'; }
+        }
+      }catch(e){}
+    })();
+
+    // 2) Regular auto-refresh notice (5 min)
     const updatedEl = document.getElementById('updated');
     const notice = document.getElementById('notice');
     const reloadBtn = document.getElementById('reload');
@@ -83,7 +101,7 @@
     }
     setInterval(checkForUpdates, 5*60*1000);
 
-    // Fight song toggle (on-page)
+    // 3) Fight song toggle (on-page)
     const audio = document.getElementById('fightAudio');
     const fsBtn = document.getElementById('fightSongBtn');
     if (fsBtn && audio) {
