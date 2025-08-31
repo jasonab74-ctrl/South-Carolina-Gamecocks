@@ -3,10 +3,9 @@
 
 """
 Collector for South Carolina Gamecocks.
-- Uses requests with a real User-Agent (some feeds block default fetchers)
-- Broadened, two-stage filtering (never leaves you empty)
-- Falls back to keep top SC/GC matches if strict pass < threshold
-- Writes items.json for the app
+- Requests with real User-Agent (some feeds block default fetchers)
+- Two-stage filtering: strict first, then fallback to avoid empty lists
+- Writes items.json consumed by the Flask app
 """
 
 import os
@@ -27,7 +26,6 @@ HEADERS = {
 }
 TIMEOUT = 20
 
-# --- Patterns ---
 STRONG_ANY = [
     r"\bgamecocks?\b",
     r"\bshane\s+beamer\b",
@@ -38,7 +36,7 @@ STRONG_ANY = [
 
 SC_OR_USC = [
     r"\bsouth\s*carolina\b",
-    r"\busc\b",   # we'll try to protect against Trojans via context
+    r"\busc\b",  # guarded against USC Trojans below
 ]
 
 FOOTBALL_TERMS = [
@@ -54,14 +52,7 @@ EXCLUDE_OTHER_SPORTS = [
     r"\btrack\b", r"\bgolf\b",
 ]
 
-NEGATIVE_USC = [r"\btrojans\b", r"\blincoln\s+riley\b", r"\busc\s+trojans\b"]  # guard vs Southern Cal
-
-
-def _domain(u: str) -> str:
-    try:
-        return urlparse(u).netloc.lower().replace("www.", "")
-    except Exception:
-        return ""
+NEGATIVE_USC = [r"\btrojans\b", r"\blincoln\s+riley\b", r"\busc\s+trojans\b"]
 
 
 def _strip_html(s: str) -> str:
@@ -69,7 +60,7 @@ def _strip_html(s: str) -> str:
 
 
 def _fetch_and_parse(url: str):
-    """Fetch via requests for better compatibility, then parse."""
+    """Fetch via requests for compatibility, then parse with feedparser."""
     try:
         r = requests.get(url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True)
         r.raise_for_status()
@@ -83,31 +74,25 @@ def _matches_any(patterns, text) -> bool:
 
 
 def _strict_keep(text: str) -> bool:
-    """Primary rule: keep clearly Gamecocks football content."""
-    # exclude non-football sports first
+    # Exclude other sports
     if _matches_any(EXCLUDE_OTHER_SPORTS, text):
         return False
-
-    # very strong tokens
+    # Very strong tokens
     if _matches_any(STRONG_ANY, text):
         return True
-
-    # protective USC logic: require some footbally context if it's just USC/SC
+    # SC/USC with football context (and not Trojans)
     if _matches_any(SC_OR_USC, text):
         if _matches_any(NEGATIVE_USC, text):
             return False
         if _matches_any(FOOTBALL_TERMS, text):
             return True
-
     return False
 
 
 def _fallback_keep(text: str) -> bool:
-    """Backup rule used if too few items: keep any SC/GC mention (still exclude other sports)."""
     if _matches_any(EXCLUDE_OTHER_SPORTS, text):
         return False
     if _matches_any(STRONG_ANY, text) or _matches_any(SC_OR_USC, text):
-        # guard against USC Trojans
         if _matches_any(NEGATIVE_USC, text):
             return False
         return True
@@ -133,7 +118,6 @@ def collect(items_path: str) -> dict:
     items_strict = []
     items_raw = []
 
-    # fetch all feeds
     for f in FEEDS:
         name, url = f.get("name", "Unknown"), f.get("url", "")
         parsed = _fetch_and_parse(url)
@@ -144,7 +128,7 @@ def collect(items_path: str) -> dict:
             if _strict_keep(text):
                 items_strict.append(it)
 
-    # dedupe helper
+    # Dedupe helper
     def _dedupe(lst):
         seen, out = set(), []
         for it in lst:
@@ -157,7 +141,7 @@ def collect(items_path: str) -> dict:
 
     items = _dedupe(items_strict)
 
-    # fallback: if still light, add SC/GC mentions from raw
+    # Fallback: if still light, add SC/GC mentions from raw
     THRESH = 12
     if len(items) < THRESH:
         extra = []
@@ -167,7 +151,7 @@ def collect(items_path: str) -> dict:
                 extra.append(it)
         items = _dedupe(items + extra)
 
-    # final sort
+    # Final sort
     items.sort(key=lambda x: x.get("published", ""), reverse=True)
 
     payload = {
