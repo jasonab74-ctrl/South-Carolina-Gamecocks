@@ -1,8 +1,7 @@
 # South Carolina Gamecocks Football — quick links + dynamic feeds
 
-# 🔗 Buttons at the top
 STATIC_LINKS = [
-    {"label": "Fight Song", "url": "/fight-song"},
+    {"label": "Fight Song", "url": "/fight-song"},  # handled as a play/pause button on the homepage
     {"label": "Betting", "url": "https://www.espn.com/chalk/"},
     {"label": "South Carolina — Official", "url": "https://gamecocksonline.com/sports/football/"},
     {"label": "Schedule", "url": "https://gamecocksonline.com/sports/football/schedule/"},
@@ -20,32 +19,17 @@ STATIC_LINKS = [
     {"label": "YouTube — ESPN CFB", "url": "https://www.youtube.com/@ESPNCFB"},
 ]
 
-# 📰 Dynamic feeds (bias toward sources that actually publish RSS/Atom)
+# High-signal feeds first; Google News variants tend to be the most reliable
 FEEDS = [
-    # Google News variants (very reliable)
-    {
-        "name": "Google News — Gamecocks Football",
-        "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en",
-    },
-    {
-        "name": "Google News — South Carolina Football",
-        "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en",
-    },
-    {
-        "name": "Google News — Gamecocks",
-        "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en",
-    },
-    {
-        "name": "Google News — Shane Beamer",
-        "url": "https://news.google.com/rss/search?q=%22Shane+Beamer%22&hl=en-US&gl=US&ceid=US:en",
-    },
+    {"name": "Google News — Gamecocks Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google News — South Carolina Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google News — Gamecocks", "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google News — Shane Beamer", "url": "https://news.google.com/rss/search?q=%22Shane+Beamer%22&hl=en-US&gl=US&ceid=US:en"},
 
-    # Local + blogs with working feeds
+    # Local/Blog feeds with proper RSS
     {"name": "Garnet & Black Attack", "url": "https://www.garnetandblackattack.com/rss/index.xml"},
-
-    # Team/beat pages (some may be partial RSS; feedparser still picks many)
     {"name": "The State — USC Football", "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss"},
 
-    # National feeds (filtered by our collector)
+    # National (collector filters down to SC items)
     {"name": "ESPN — CFB News", "url": "https://www.espn.com/espn/rss/ncf/news"},
 ]
