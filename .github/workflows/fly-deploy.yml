@@ -1,10 +1,13 @@
 name: Deploy to Fly
+
 on:
-  push: { branches: [ main ] }
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot   # must match fly.toml `app`
+  FLY_APP_NAME: gamecocks-fb-bot   # must match app in fly.toml
   FLY_REGION: atl
 
 jobs:
@@ -17,22 +20,23 @@ jobs:
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      # Create app if it doesn't exist (no jq needed)
       - name: Ensure app exists
-        shell: bash
-        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if flyctl apps show "$FLY_APP_NAME" >/dev/null 2>&1; then
-            echo "App exists."
+            echo "App exists"
           else
-            echo "Creating app $FLY_APP_NAME in $FLY_REGION"
+            echo "Creating $FLY_APP_NAME in $FLY_REGION"
             flyctl apps create "$FLY_APP_NAME" --region "$FLY_REGION"
           fi
 
       - name: Deploy
-        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy --remote-only --app "$FLY_APP_NAME" --region "$FLY_REGION"
 
       - name: Scale web + worker
-        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME"
