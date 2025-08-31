@@ -11,20 +11,20 @@ primary_region = "atl"
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = true
+  auto_stop_machines = false   # TEMP while we debug
   auto_start_machines = true
   min_machines_running = 1
   processes = ["web"]
 
-[checks]
-  [checks.http]
-    port = 8080
-    type = "http"
-    interval = "15s"
-    timeout = "2s"
-    method = "GET"
-    path = "/health"
+# (TEMP) remove health checks while debugging startup
+# [checks]
+#   [checks.http]
+#     port = 8080
+#     type = "http"
+#     interval = "15s"
+#     timeout = "2s"
+#     method = "GET"
+#     path = "/health"
 
 [processes]
   web = "gunicorn -w 3 -k gthread --threads 8 -b 0.0.0.0:8080 server:app"
-  worker = "bash -lc 'while true; do python3 collect.py; sleep 1800; done'"
