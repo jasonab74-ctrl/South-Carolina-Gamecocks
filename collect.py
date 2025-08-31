@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Collector that fetches FEEDS (RSS/Atom), filters for Gamecocks content,
-and writes items.json. Filtering is relaxed to ensure population while
-still excluding other sports.
+Collector for South Carolina Gamecocks.
+- Uses requests with a real User-Agent (some feeds block default fetchers)
+- Relaxed but targeted filters (keeps Gamecocks, excludes other sports)
+- Fallback: if <10 items after filtering, do a second pass to make sure the feed isn't empty
+- Writes items.json consumed by the Flask app
 """
 
 import os
@@ -14,11 +16,20 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import feedparser
+import requests
+
 from feeds import FEEDS
 
-# ------------------ Filtering ------------------
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+TIMEOUT = 20
+
 TEAM_PATTERNS = {
-    # Relaxed: any clear Gamecocks affinity
+    # What we positively look for (any of these):
     "must_any": [
         r"\b(south\s*carolina)\b",
         r"\b(gamecocks?)\b",
@@ -28,6 +39,7 @@ TEAM_PATTERNS = {
         r"\bspurs\s*up\b",
         r"\bgamecock\s*central\b",
     ],
+    # Sports we do NOT want:
     "exclude": [
         r"\bwomen'?s\b", r"\bwbb\b",
         r"\bbasketball\b", r"\bbaseball\b",
@@ -44,8 +56,8 @@ TRUSTED_DOMAINS = {
     "espn.com",
     "cbssports.com",
     "yahoo.com",
-    "reddit.com",
     "news.google.com",
+    "reddit.com",
 }
 
 def _domain(u: str) -> str:
@@ -57,22 +69,31 @@ def _domain(u: str) -> str:
 def _strip_html(s: str) -> str:
     return re.sub(r"<.*?>", "", s or "")
 
-def _pass_filter(title: str, summary: str, link: str, feed_url: str) -> bool:
+def _fetch_and_parse(url: str):
+    """Fetch with requests (real UA), then parse with feedparser."""
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True)
+        r.raise_for_status()
+        return feedparser.parse(r.content)
+    except Exception:
+        # Fallback to feedparser's own fetch if requests fails
+        return feedparser.parse(url)
+
+def _pass_filter(title: str, summary: str) -> bool:
+    """Return True if item matches our keep rules."""
     text = f"{title} {summary}".lower()
 
-    # Exclude other sports
+    # Exclude obvious other sports
     for pat in TEAM_PATTERNS["exclude"]:
         if re.search(pat, text, flags=re.I):
             return False
 
-    dom = _domain(feed_url or link)
-    # Trusted domains only need team affinity once
+    # Keep if ANY team affinity appears
     for pat in TEAM_PATTERNS["must_any"]:
         if re.search(pat, text, flags=re.I):
             return True
 
-    # Otherwise, allow if any team pattern appears
-    return any(re.search(pat, text, flags=re.I) for pat in TEAM_PATTERNS["must_any"])
+    return False
 
 def _normalize(feed_name: str, feed_url: str, e) -> dict:
     title = (e.get("title") or "").strip()
@@ -90,34 +111,47 @@ def _normalize(feed_name: str, feed_url: str, e) -> dict:
 
 def collect(items_path: str) -> dict:
     items = []
+    raw_items = []
 
     for f in FEEDS:
         name, url = f.get("name", "Unknown"), f.get("url", "")
-        try:
-            parsed = feedparser.parse(url)
-            for e in parsed.get("entries", []):
-                it = _normalize(name, url, e)
-                if _pass_filter(it["title"], it["summary"], it["link"], url):
-                    items.append(it)
-        except Exception:
-            # Quietly skip bad feeds; don't pollute UI with error cards
-            continue
+        parsed = _fetch_and_parse(url)
+        for e in parsed.get("entries", []):
+            it = _normalize(name, url, e)
+            raw_items.append(it)
+            if _pass_filter(it["title"], it["summary"]):
+                items.append(it)
 
     # Dedupe by link (or title+source as fallback)
-    seen, deduped = set(), []
-    for it in items:
-        k = it["link"] or (it["title"], it["source"])
-        if k in seen:
-            continue
-        seen.add(k)
-        deduped.append(it)
+    def _dedupe(lst):
+        seen, out = set(), []
+        for it in lst:
+            k = it["link"] or (it["title"], it["source"])
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(it)
+        return out
 
-    # Sort newest-ish first (strings are fine for most feed timestamps)
-    deduped.sort(key=lambda x: x.get("published", ""), reverse=True)
+    items = _dedupe(items)
+
+    # Fallback: if we got too few, try to keep at least something relevant
+    if len(items) < 10:
+        fallback = []
+        for it in raw_items:
+            text = f"{it['title']} {it['summary']}".lower()
+            if any(re.search(p, text, flags=re.I) for p in TEAM_PATTERNS["must_any"]):
+                # still respect exclusions
+                if not any(re.search(p, text, flags=re.I) for p in TEAM_PATTERNS["exclude"]):
+                    fallback.append(it)
+        items = _dedupe(items + fallback)
+
+    # Sort newest-ish first
+    items.sort(key=lambda x: x.get("published", ""), reverse=True)
 
     payload = {
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-        "items": deduped[:250],
+        "items": items[:250],
     }
     with open(items_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
