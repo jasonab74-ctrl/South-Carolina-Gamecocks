@@ -1,9 +1,8 @@
-# feeds.py
 # South Carolina Gamecocks Football — quick links + dynamic feeds
 
-# 🔗 Buttons shown at the top of the site
+# 🔗 Buttons at the top
 STATIC_LINKS = [
-    {"label": "Fight Song", "url": "/fight-song"},  # plays /static/fight-song.mp3
+    {"label": "Fight Song", "url": "/fight-song"},
     {"label": "Betting", "url": "https://www.espn.com/chalk/"},
     {"label": "South Carolina — Official", "url": "https://gamecocksonline.com/sports/football/"},
     {"label": "Schedule", "url": "https://gamecocksonline.com/sports/football/schedule/"},
@@ -21,34 +20,32 @@ STATIC_LINKS = [
     {"label": "YouTube — ESPN CFB", "url": "https://www.youtube.com/@ESPNCFB"},
 ]
 
-# 📰 RSS/Atom feeds for dynamic collection
+# 📰 Dynamic feeds (bias toward sources that actually publish RSS/Atom)
 FEEDS = [
+    # Google News variants (very reliable)
     {
         "name": "Google News — Gamecocks Football",
         "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en",
     },
     {
-        "name": "The State — USC Football",
-        "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss",
+        "name": "Google News — South Carolina Football",
+        "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en",
     },
     {
-        "name": "Garnet & Black Attack",
-        "url": "https://www.garnetandblackattack.com/rss/index.xml",
+        "name": "Google News — Gamecocks",
+        "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en",
     },
     {
-        "name": "247Sports — South Carolina",
-        "url": "https://247sports.com/college/south-carolina/Headlines.rss",
+        "name": "Google News — Shane Beamer",
+        "url": "https://news.google.com/rss/search?q=%22Shane+Beamer%22&hl=en-US&gl=US&ceid=US:en",
     },
-    {
-        "name": "On3 — GamecockCentral (Headlines)",
-        "url": "https://www.on3.com/teams/south-carolina-gamecocks/feed/",
-    },
-    {
-        "name": "Reddit — r/Gamecocks",
-        "url": "https://www.reddit.com/r/Gamecocks/.rss",
-    },
-    {
-        "name": "ESPN — CFB News",
-        "url": "https://www.espn.com/espn/rss/ncf/news",
-    },
+
+    # Local + blogs with working feeds
+    {"name": "Garnet & Black Attack", "url": "https://www.garnetandblackattack.com/rss/index.xml"},
+
+    # Team/beat pages (some may be partial RSS; feedparser still picks many)
+    {"name": "The State — USC Football", "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss"},
+
+    # National feeds (filtered by our collector)
+    {"name": "ESPN — CFB News", "url": "https://www.espn.com/espn/rss/ncf/news"},
 ]
