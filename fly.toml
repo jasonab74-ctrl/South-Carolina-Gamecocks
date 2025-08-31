@@ -26,5 +26,5 @@ primary_region = "atl"
     path = "/health"
 
 [processes]
-  web = "gunicorn -w 4 -b 0.0.0.0:8080 server:app"
+  web = "gunicorn -w 3 -k gthread --threads 8 -b 0.0.0.0:8080 server:app"
   worker = "bash -lc 'while true; do python3 collect.py; sleep 1800; done'"
