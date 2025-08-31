@@ -27,31 +27,38 @@ jobs:
           set -e
           flyctl apps create "$FLY_APP_NAME" || echo "App may already exist"
 
-      # (Optional) Sync a collect token into Fly secrets if you set one in GitHub
+      # Sync COLLECT_TOKEN only if you've set it as a GitHub secret
       - name: Sync COLLECT_TOKEN to Fly (optional)
-        if: ${{ secrets.COLLECT_TOKEN != '' }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
         run: |
-          flyctl secrets set COLLECT_TOKEN=${{ secrets.COLLECT_TOKEN }} --app "$FLY_APP_NAME" --yes
+          if [ -n "$COLLECT_TOKEN_SECRET" ]; then
+            echo "Setting COLLECT_TOKEN in Fly…"
+            flyctl secrets set COLLECT_TOKEN="$COLLECT_TOKEN_SECRET" --app "$FLY_APP_NAME" --yes
+          else
+            echo "No COLLECT_TOKEN secret set; skipping"
+          fi
 
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy --remote-only --app "$FLY_APP_NAME"
 
-      # ✅ Add --yes so CI confirms the scaling plan
+      # Add --yes for non-interactive CI
       - name: Scale web + worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME" --yes
 
-      # ✅ Kick off an immediate collect so items.json isn't empty
+      # Kick off an initial collect so items.json isn’t empty
       - name: Kick off initial collect
+        env:
+          COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
         run: |
           URL="https://${{ env.FLY_APP_NAME }}.fly.dev/collect"
-          if [ -n "${{ secrets.COLLECT_TOKEN }}" ]; then
-            curl -fsS -X POST -H "X-Collect-Token: ${{ secrets.COLLECT_TOKEN }}" "$URL" || true
+          if [ -n "$COLLECT_TOKEN_SECRET" ]; then
+            curl -fsS -X POST -H "X-Collect-Token: $COLLECT_TOKEN_SECRET" "$URL" || true
           else
             curl -fsS -X POST "$URL" || true
           fi
