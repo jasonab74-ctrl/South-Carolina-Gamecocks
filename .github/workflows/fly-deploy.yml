@@ -27,7 +27,7 @@ jobs:
           set -e
           flyctl apps create "$FLY_APP_NAME" || echo "App may already exist"
 
-      # Echo apps so we can verify org/account context in logs
+      # Optional: list apps so logs show the token's context
       - name: List apps for this token
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -38,7 +38,12 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy --remote-only --app "$FLY_APP_NAME"
 
+      # ✅ Fix: add --yes so CI can confirm the scaling plan
       - name: Scale web + worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME"
+        run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME" --yes
+
+      # ✅ Kick off an immediate collect so items.json isn't empty
+      - name: Kick off initial collect
+        run: curl -fsS -X POST "https://${{ env.FLY_APP_NAME }}.fly.dev/collect" || true
