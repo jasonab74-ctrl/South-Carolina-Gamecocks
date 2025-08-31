@@ -3,8 +3,9 @@
 
 """
 South Carolina Gamecocks — Football Feed
-- Includes /fight-song page
-- Will auto-collect once on first request if items.json is empty
+- Auto-collects on first load if items.json is empty (safety net)
+- /collect endpoint to refresh on demand
+- /fight-song page (your MP3: static/fight-song.mp3)
 """
 
 import os
@@ -17,15 +18,20 @@ import collect as collector  # uses collect.collect() to rebuild items.json
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ITEMS_PATH = os.environ.get("ITEMS_PATH", os.path.join(APP_DIR, "items.json"))
-COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional; if set, require header on /collect
+COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional
 AUTO_COLLECT_ON_EMPTY = os.environ.get("AUTO_COLLECT_ON_EMPTY", "1") == "1"
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 
-def load_items():
+def _ensure_items_file():
     if not os.path.exists(ITEMS_PATH):
-        return {"updated": None, "items": []}
+        with open(ITEMS_PATH, "w", encoding="utf-8") as f:
+            json.dump({"updated": None, "items": []}, f)
+
+
+def load_items():
+    _ensure_items_file()
     with open(ITEMS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -34,13 +40,14 @@ def load_items():
 def index():
     data = load_items()
 
-    # 👇 Safety net: if empty, do a synchronous collect once
-    if AUTO_COLLECT_ON_EMPTY and (not data.get("items")):
+    # Safety net: if empty, try a synchronous collect once
+    if AUTO_COLLECT_ON_EMPTY and not data.get("items"):
         try:
             out = collector.collect(ITEMS_PATH)
             data = out
         except Exception:
-            pass  # don't 500 the page if a feed hiccups
+            # If a feed hiccups, don't crash the page
+            pass
 
     return render_template(
         "index.html",
@@ -54,9 +61,7 @@ def index():
 
 @app.route("/items.json")
 def items_json():
-    if not os.path.exists(ITEMS_PATH):
-        with open(ITEMS_PATH, "w", encoding="utf-8") as f:
-            json.dump({"updated": None, "items": []}, f)
+    _ensure_items_file()
     return send_file(ITEMS_PATH, mimetype="application/json", conditional=True)
 
 
