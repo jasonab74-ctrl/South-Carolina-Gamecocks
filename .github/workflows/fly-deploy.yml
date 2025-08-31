@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot   # must match app in fly.toml
+  FLY_APP_NAME: gamecocks-fb-bot   # MUST match app in fly.toml
 
 jobs:
   deploy:
@@ -19,16 +19,19 @@ jobs:
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      - name: Ensure app exists
+      # Create the app every time (safe if it already exists)
+      - name: Create app (idempotent)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          if flyctl apps show "$FLY_APP_NAME" >/dev/null 2>&1; then
-            echo "App exists"
-          else
-            echo "Creating $FLY_APP_NAME"
-            flyctl apps create "$FLY_APP_NAME"
-          fi
+          set -e
+          flyctl apps create "$FLY_APP_NAME" || echo "App may already exist"
+
+      # Echo apps so we can verify org/account context in logs
+      - name: List apps for this token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl apps list
 
       - name: Deploy
         env:
