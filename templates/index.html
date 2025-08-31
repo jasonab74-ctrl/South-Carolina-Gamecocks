@@ -19,9 +19,16 @@
     </div>
   </header>
 
+  <!-- Hidden audio element for on-page play/pause -->
+  <audio id="fightAudio" src="/static/fight-song.mp3" preload="auto"></audio>
+
   <nav class="quick-links">
     {% for link in static_links %}
-      <a class="pill" href="{{ link.url }}" {% if link.url.startswith('/') %}{% else %}target="_blank" rel="noopener"{% endif %}>{{ link.label }}</a>
+      {% if link.url == '/fight-song' %}
+        <button id="fightSongBtn" type="button" class="pill pill-primary" aria-pressed="false">Play Fight Song</button>
+      {% else %}
+        <a class="pill" href="{{ link.url }}" {% if link.url.startswith('/') %}{% else %}target="_blank" rel="noopener"{% endif %}>{{ link.label }}</a>
+      {% endif %}
     {% endfor %}
   </nav>
 
@@ -56,6 +63,7 @@
   </footer>
 
   <script>
+    // Auto-refresh notice
     const updatedEl = document.getElementById('updated');
     const notice = document.getElementById('notice');
     const reloadBtn = document.getElementById('reload');
@@ -70,6 +78,27 @@
       }catch(e){}
     }
     setInterval(checkForUpdates, 5*60*1000);
+
+    // Fight song toggle (stays on the page)
+    const audio = document.getElementById('fightAudio');
+    const fsBtn = document.getElementById('fightSongBtn');
+    if (fsBtn && audio) {
+      const setBtn = (playing) => {
+        fsBtn.textContent = playing ? 'Pause Fight Song' : 'Play Fight Song';
+        fsBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+        fsBtn.classList.toggle('pill-primary-on', playing);
+      };
+      setBtn(false);
+      fsBtn.addEventListener('click', async () => {
+        try {
+          if (audio.paused) { await audio.play(); setBtn(true); }
+          else { audio.pause(); setBtn(false); }
+        } catch(e) { /* autoplay policies require a click, which we have */ }
+      });
+      audio.addEventListener('ended', () => setBtn(false));
+      audio.addEventListener('pause', () => setBtn(false));
+      audio.addEventListener('play', () => setBtn(true));
+    }
   </script>
 </body>
 </html>
