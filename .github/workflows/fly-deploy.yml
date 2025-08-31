@@ -26,23 +26,25 @@ jobs:
           flyctl apps create "$FLY_APP_NAME" || echo "App already exists"
 
       - name: Deploy
-        id: deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -e
+          # deploy and wait; if it fails, we still print status/logs below
           flyctl deploy --remote-only --app "$FLY_APP_NAME" --wait-timeout 10m
 
-      # Always show recent app logs & status so we can see why deploy would fail
-      - name: Show Fly status (always)
+      # Always print status + recent logs so we can see EXACTLY why it failed
+      - name: Show Fly status and logs (always)
         if: always()
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
+          echo "=== STATUS ==="
           flyctl status -a "$FLY_APP_NAME" || true
-          flyctl logs   -a "$FLY_APP_NAME" --since 15m || true
+          echo "=== LOGS (last 20m) ==="
+          flyctl logs -a "$FLY_APP_NAME" --since 20m || true
 
-      # Kick a first collect (never fail on this)
+      # Best-effort initial collect (never fail the job on this)
       - name: Kick off initial collect (best effort)
         env:
           COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
