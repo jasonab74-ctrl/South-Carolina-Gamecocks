@@ -1,24 +1,22 @@
-# server.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
-Flask server for the South Carolina Gamecocks Football feed.
-Adds a /fight-song page that plays /static/fight-song.mp3.
-Rename your audio file to exactly: static/fight-song.mp3
+South Carolina Gamecocks — Football Feed
+Adds /fight-song page. Place your MP3 at static/fight-song.mp3
 """
 
 import os
 import json
-from datetime import datetime, timezone
 from flask import Flask, render_template, send_file, jsonify, request, abort
+from datetime import datetime, timezone
 
 from feeds import FEEDS, STATIC_LINKS
 import collect as collector  # uses collect.collect() to rebuild items.json
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ITEMS_PATH = os.environ.get("ITEMS_PATH", os.path.join(APP_DIR, "items.json"))
-COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional: protects /collect
+COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional; if set, require header on /collect
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -33,12 +31,10 @@ def load_items():
 @app.route("/")
 def index():
     data = load_items()
-    updated = data.get("updated")
-    items = data.get("items", [])
     return render_template(
         "index.html",
-        items=items,
-        updated=updated,
+        items=data.get("items", []),
+        updated=data.get("updated"),
         static_links=STATIC_LINKS,
         feeds=FEEDS,
         team_title="South Carolina Gamecocks — Football Feed",
@@ -47,9 +43,8 @@ def index():
 
 @app.route("/items.json")
 def items_json():
-    # serve the cached items.json (used by auto-refresh in the UI)
+    # Always serve a valid JSON file
     if not os.path.exists(ITEMS_PATH):
-        # ensure valid JSON even before first collect
         with open(ITEMS_PATH, "w", encoding="utf-8") as f:
             json.dump({"updated": None, "items": []}, f)
     return send_file(ITEMS_PATH, mimetype="application/json", conditional=True)
@@ -62,23 +57,18 @@ def health():
 
 @app.route("/collect", methods=["POST"])
 def run_collect():
-    # Optional auth guard
     token = request.headers.get("X-Collect-Token", "")
     if COLLECT_TOKEN and token != COLLECT_TOKEN:
         abort(401, "unauthorized")
-    result = collector.collect(ITEMS_PATH)
-    return jsonify(
-        {"ok": True, "wrote": ITEMS_PATH, "count": len(result.get("items", []))}
-    )
+    out = collector.collect(ITEMS_PATH)
+    return jsonify({"ok": True, "count": len(out.get("items", [])), "updated": out.get("updated")})
 
 
-# --- Fight Song page (expects audio at static/fight-song.mp3) ---
+# ----- Fight song page (requires templates/fight_song.html) -----
 @app.route("/fight-song")
 def fight_song():
-    return render_template(
-        "fight_song.html",
-        team_title="South Carolina Gamecocks — Fight Song",
-    )
+    # This route never 500s due to a missing MP3 — it just renders the page.
+    return render_template("fight_song.html", team_title="South Carolina Gamecocks — Fight Song")
 
 
 if __name__ == "__main__":
