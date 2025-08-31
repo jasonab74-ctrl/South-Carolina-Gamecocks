@@ -12,13 +12,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      # Hard fail early if the token is missing (this is a common 5s failure)
+      - name: Verify FLY_API_TOKEN secret exists
+        run: |
+          if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
+            echo "::error::Missing GitHub secret FLY_API_TOKEN (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
 
       - name: Create app (idempotent)
         env:
@@ -27,16 +34,16 @@ jobs:
           set -e
           flyctl apps create "$FLY_APP_NAME" || echo "App already exists"
 
-      # ⬇️ Detach so the job never waits forever; still builds remotely
-      - name: Build & deploy (detached)
+      # Build & roll out (don’t hang the job)
+      - name: Deploy (detached)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -e
-          flyctl deploy --remote-only --app "$FLY_APP_NAME" --detach --depot false
+          flyctl deploy --remote-only --app "$FLY_APP_NAME" --detach
 
-      # ⏳ Poll the app ourselves and show logs so you can see real errors
-      - name: Wait for app & show logs
+      # Always show status + recent logs so we can see real errors
+      - name: Wait for health & print logs
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
@@ -52,9 +59,9 @@ jobs:
           echo "=== STATUS ==="
           flyctl status -a "$FLY_APP_NAME" || true
           echo "=== LOGS (last 20m) ==="
-          flyctl logs -a "$FLY_APP_NAME" --since 20m || true
+          flyctl logs   -a "$FLY_APP_NAME" --since 20m || true
 
-      # Best effort initial collect so items.json isn't empty
+      # Best-effort initial collect so items.json isn’t empty
       - name: Kick off initial collect (best effort)
         env:
           COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
@@ -65,3 +72,4 @@ jobs:
           else
             curl -fsS -X POST "$URL" || true
           fi
+
