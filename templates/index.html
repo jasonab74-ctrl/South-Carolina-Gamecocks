@@ -21,12 +21,12 @@
 
   <nav class="quick-links">
     {% for link in static_links %}
-      <a class="pill" href="{{ link.url }}" target="_blank" rel="noopener">{{ link.label }}</a>
+      <a class="pill" href="{{ link.url }}" {% if link.url.startswith('/') %}{% else %}target="_blank" rel="noopener"{% endif %}>{{ link.label }}</a>
     {% endfor %}
   </nav>
 
   <main>
-    <section id="notice" class="notice hidden">New items available — <button id="reload">Refresh</button></section>
+    <section id="notice" class="notice hidden">New items available — <button id="reload" class="btn">Refresh</button></section>
 
     <section id="feed">
       {% if not items %}
@@ -35,7 +35,9 @@
       {% for it in items %}
       <article class="card">
         <a class="title" href="{{ it.link }}" target="_blank" rel="noopener">{{ it.title }}</a>
-        {% if it.summary %}<p class="summary">{{ it.summary }}</p>{% endif %}
+        {% if it.summary %}
+          <p class="summary">{{ it.summary }}</p>
+        {% endif %}
         <div class="meta">
           <span class="source">{{ it.source }}</span>
           {% if it.published %}<span class="dot">•</span><time>{{ it.published }}</time>{% endif %}
