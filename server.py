@@ -1,27 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-South Carolina Gamecocks — Football Feed
-Safe-mode server:
-- Auto-collects once on first load if items.json is empty
-- /collect to refresh
-- /debug-collect returns a tiny JSON summary (count + top titles)
-- /fight-song page (audio at static/fight-song.mp3)
-"""
-
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask, render_template, send_file, jsonify, request, abort
+from threading import Thread
 
 from feeds import FEEDS, STATIC_LINKS
-import collect as collector  # collector.collect() writes items.json
+import collect as collector  # collector.collect(items_path) -> {"updated", "items": [...]}
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ITEMS_PATH = os.environ.get("ITEMS_PATH", os.path.join(APP_DIR, "items.json"))
-COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")            # optional
-AUTO_COLLECT_ON_EMPTY = os.environ.get("AUTO_COLLECT_ON_EMPTY", "1") == "1"
+COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -41,12 +32,7 @@ def _load_items():
 @app.route("/")
 def index():
     data = _load_items()
-    if AUTO_COLLECT_ON_EMPTY and not data.get("items"):
-        try:
-            data = collector.collect(ITEMS_PATH)
-        except Exception as e:
-            # Do not 500 the page because of collection hiccups
-            print("[collect ERROR]", e)
+    # No synchronous collect here (prevents proxy timeouts / “cycling”)
     return render_template(
         "index.html",
         items=data.get("items", []),
@@ -68,26 +54,33 @@ def health():
     return jsonify({"ok": True, "updated": _load_items().get("updated")})
 
 
+# ----- Collect endpoints -----
+
+def _collect_in_thread():
+    try:
+        collector.collect(ITEMS_PATH)
+    except Exception as e:
+        print("[collect thread error]", e)
+
+
+@app.route("/collect-now")
+def collect_now_public():
+    """Public, non-blocking collect (used by homepage JS)."""
+    Thread(target=_collect_in_thread, daemon=True).start()
+    return jsonify({"ok": True, "started": True})
+
+
 @app.route("/collect", methods=["POST"])
-def run_collect():
+def collect_protected():
+    """Protected (tokened) collect, if you want to hit from CI."""
     token = request.headers.get("X-Collect-Token", "")
     if COLLECT_TOKEN and token != COLLECT_TOKEN:
         abort(401, "unauthorized")
-    out = collector.collect(ITEMS_PATH)
-    return jsonify({"ok": True, "count": len(out.get("items", [])), "updated": out.get("updated")})
+    Thread(target=_collect_in_thread, daemon=True).start()
+    return jsonify({"ok": True, "started": True})
 
 
-@app.route("/debug-collect")
-def debug_collect():
-    """Quick sanity check endpoint (GET). If COLLECT_TOKEN is set, require it as ?token=..."""
-    t = request.args.get("token", "")
-    if COLLECT_TOKEN and t != COLLECT_TOKEN:
-        abort(401, "unauthorized")
-    out = collector.collect(ITEMS_PATH)
-    sample = [it.get("title") for it in out.get("items", [])[:10]]
-    return jsonify({"ok": True, "count": len(out.get("items", [])), "sample": sample})
-
-
+# ----- Fight song -----
 @app.route("/fight-song")
 def fight_song():
     return render_template("fight_song.html", team_title="South Carolina Gamecocks — Fight Song")
