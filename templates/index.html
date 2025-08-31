@@ -24,10 +24,14 @@
 
   <nav class="quick-links">
     {% for link in static_links %}
-      {% if link.url == '/fight-song' %}
-        <button id="fightSongBtn" type="button" class="pill pill-primary" aria-pressed="false">Play Fight Song</button>
+      {% if link.url[:1] == '/' %}
+        {% if link.url == '/fight-song' %}
+          <button id="fightSongBtn" type="button" class="pill pill-primary" aria-pressed="false">Play Fight Song</button>
+        {% else %}
+          <a class="pill" href="{{ link.url }}">{{ link.label }}</a>
+        {% endif %}
       {% else %}
-        <a class="pill" href="{{ link.url }}" {% if link.url.startswith('/') %}{% else %}target="_blank" rel="noopener"{% endif %}>{{ link.label }}</a>
+        <a class="pill" href="{{ link.url }}" target="_blank" rel="noopener">{{ link.label }}</a>
       {% endif %}
     {% endfor %}
   </nav>
@@ -79,7 +83,7 @@
     }
     setInterval(checkForUpdates, 5*60*1000);
 
-    // Fight song toggle (stays on the page)
+    // Fight song toggle (on-page)
     const audio = document.getElementById('fightAudio');
     const fsBtn = document.getElementById('fightSongBtn');
     if (fsBtn && audio) {
@@ -93,7 +97,7 @@
         try {
           if (audio.paused) { await audio.play(); setBtn(true); }
           else { audio.pause(); setBtn(false); }
-        } catch(e) { /* autoplay policies require a click, which we have */ }
+        } catch(e) {}
       });
       audio.addEventListener('ended', () => setBtn(false));
       audio.addEventListener('pause', () => setBtn(false));
