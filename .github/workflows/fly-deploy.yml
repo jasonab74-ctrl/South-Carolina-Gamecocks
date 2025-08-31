@@ -1,43 +1,45 @@
-name: Deploy to Fly (fast)
+name: Deploy to Fly (simple)
 
 on:
   push:
-    branches: [ main ]
+    branches: ["main"]
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot
+  FLY_APP_NAME: "gamecocks-fb-bot"   # must match fly.toml
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1
 
       - name: Verify FLY_API_TOKEN secret exists
         run: |
           if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
-            echo "::error::Missing secret FLY_API_TOKEN"; exit 1; fi
+            echo "::error::Missing GitHub secret FLY_API_TOKEN (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
 
       - name: Create app (idempotent)
-        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
-        run: flyctl apps create "$FLY_APP_NAME" || echo "exists"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl apps create "$FLY_APP_NAME" || echo "App already exists"
 
-      # 🚀 kick the rollout and return immediately
       - name: Deploy (detached)
-        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
-        run: flyctl deploy --remote-only --app "$FLY_APP_NAME" --detach
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy --remote-only --app "$FLY_APP_NAME" --detach
 
-      # Show quick status but don't wait
-      - name: Show status (non-blocking)
-        if: always()
-        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
-        run: flyctl status -a "$FLY_APP_NAME" || true
-
-      # Seed the feed (best effort; won’t fail the job)
-      - name: Kick off initial collect
+      - name: Seed feed (best effort)
         env:
           COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
         run: |
@@ -47,5 +49,3 @@ jobs:
           else
             curl -fsS -X POST "$URL" || true
           fi
-
-
