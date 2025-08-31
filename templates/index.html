@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>South Carolina Gamecocks — Football Feed</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/static/logo.png">
+  <link rel="apple-touch-icon" href="/static/logo.png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <img src="/static/logo.png" alt="SC" class="logo">
+      <div>
+        <h1>South Carolina Gamecocks — Football Feed</h1>
+        <div class="sub">Updated: <span id="updated">{{ updated or "—" }}</span></div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="quick-links">
+    {% for link in static_links %}
+      <a class="pill" href="{{ link.url }}" target="_blank" rel="noopener">{{ link.label }}</a>
+    {% endfor %}
+  </nav>
+
+  <main>
+    <section id="notice" class="notice hidden">New items available — <button id="reload">Refresh</button></section>
+
+    <section id="feed">
+      {% if not items %}
+        <div class="empty">No articles yet. Check back soon.</div>
+      {% endif %}
+      {% for it in items %}
+      <article class="card">
+        <a class="title" href="{{ it.link }}" target="_blank" rel="noopener">{{ it.title }}</a>
+        {% if it.summary %}<p class="summary">{{ it.summary }}</p>{% endif %}
+        <div class="meta">
+          <span class="source">{{ it.source }}</span>
+          {% if it.published %}<span class="dot">•</span><time>{{ it.published }}</time>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+  </main>
+
+  <footer class="footer">
+    <small>Feeds:
+      {% for f in feeds %}
+        <a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.name }}</a>{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </small>
+  </footer>
+
+  <script>
+    const updatedEl = document.getElementById('updated');
+    const notice = document.getElementById('notice');
+    const reloadBtn = document.getElementById('reload');
+    async function checkForUpdates(){
+      try{
+        const res = await fetch('/items.json',{cache:'no-store'});
+        const data = await res.json();
+        if(updatedEl.textContent !== data.updated){
+          notice.classList.remove('hidden');
+          reloadBtn.onclick = () => location.reload();
+        }
+      }catch(e){}
+    }
+    setInterval(checkForUpdates, 5*60*1000);
+  </script>
+</body>
+</html>
