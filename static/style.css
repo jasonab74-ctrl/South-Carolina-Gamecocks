@@ -32,10 +32,12 @@ h1{margin:0;font-size:20px}
 .pill-primary-on{background:#a30012;border-color:#a30012;color:#fff}
 
 main{max-width:900px;margin:14px auto;padding:0 12px}
+.container{max-width:900px;margin:16px auto;padding:0 12px}
 .notice{background:#fff3cd;border:1px solid #ffe08a;padding:10px 12px;border-radius:8px;margin-bottom:10px}
 .hidden{display:none}
 
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:12px 0;box-shadow:var(--shadow)}
+.center{text-align:center}
 .title{font-size:18px;font-weight:800;text-decoration:none;color:var(--black)}
 .title:hover{text-decoration:underline}
 .summary{margin:6px 0 0;color:var(--black)}
