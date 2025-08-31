@@ -6,11 +6,13 @@ on:
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot   # MUST match fly.toml
+  FLY_APP_NAME: gamecocks-fb-bot   # must match fly.toml
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,26 +27,34 @@ jobs:
           set -e
           flyctl apps create "$FLY_APP_NAME" || echo "App already exists"
 
-      - name: Deploy
+      # ⬇️ Detach so the job never waits forever; still builds remotely
+      - name: Build & deploy (detached)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -e
-          # deploy and wait; if it fails, we still print status/logs below
-          flyctl deploy --remote-only --app "$FLY_APP_NAME" --wait-timeout 10m
+          flyctl deploy --remote-only --app "$FLY_APP_NAME" --detach --depot false
 
-      # Always print status + recent logs so we can see EXACTLY why it failed
-      - name: Show Fly status and logs (always)
-        if: always()
+      # ⏳ Poll the app ourselves and show logs so you can see real errors
+      - name: Wait for app & show logs
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
+          set -e
+          for i in $(seq 1 24); do
+            echo "== Poll $i/24 =="
+            if curl -fsS "https://${FLY_APP_NAME}.fly.dev/health" >/dev/null 2>&1; then
+              echo "Health endpoint is up ✅"
+              break
+            fi
+            sleep 15
+          done
           echo "=== STATUS ==="
           flyctl status -a "$FLY_APP_NAME" || true
           echo "=== LOGS (last 20m) ==="
           flyctl logs -a "$FLY_APP_NAME" --since 20m || true
 
-      # Best-effort initial collect (never fail the job on this)
+      # Best effort initial collect so items.json isn't empty
       - name: Kick off initial collect (best effort)
         env:
           COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
