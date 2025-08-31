@@ -19,7 +19,7 @@ STATIC_LINKS = [
     {"label": "YouTube — ESPN CFB", "url": "https://www.youtube.com/@ESPNCFB"},
 ]
 
-# High-signal feeds first; add Bing News RSS for redundancy
+# Reliable feeds + redundancy (Google & Bing News RSS)
 FEEDS = [
     # Google News variants
     {"name": "Google News — Gamecocks Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
@@ -27,7 +27,7 @@ FEEDS = [
     {"name": "Google News — Gamecocks", "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — Shane Beamer", "url": "https://news.google.com/rss/search?q=%22Shane+Beamer%22&hl=en-US&gl=US&ceid=US:en"},
 
-    # Bing News (often returns items when Google pauses a topic)
+    # Bing News redundancy
     {"name": "Bing News — Gamecocks Football", "url": "https://www.bing.com/news/search?q=South+Carolina+Gamecocks+football&format=rss"},
     {"name": "Bing News — Shane Beamer", "url": "https://www.bing.com/news/search?q=Shane+Beamer&format=rss"},
 
@@ -35,6 +35,6 @@ FEEDS = [
     {"name": "Garnet & Black Attack", "url": "https://www.garnetandblackattack.com/rss/index.xml"},
     {"name": "The State — USC Football", "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss"},
 
-    # National (filtered down by collector)
+    # National (collector filters down to SC items)
     {"name": "ESPN — CFB News", "url": "https://www.espn.com/espn/rss/ncf/news"},
 ]
