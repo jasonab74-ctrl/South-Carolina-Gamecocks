@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ team_title }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/static/logo.png">
+  <link rel="apple-touch-icon" href="/static/logo.png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <img src="/static/logo.png" alt="SC" class="logo">
+      <div>
+        <h1>{{ team_title }}</h1>
+        <div class="sub"><a class="pill" href="/">← Back to Feed</a></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <article class="card center">
+      <h2 style="margin-top:0;">Play the Fight Song</h2>
+      <audio controls preload="auto" style="width:100%;max-width:680px;">
+        <source src="/static/fight-song.mp3" type="audio/mpeg">
+        Your browser does not support audio. <a href="/static/fight-song.mp3">Download MP3</a>
+      </audio>
+      <p class="meta" style="margin-top:10px;">File path: <code>/static/fight-song.mp3</code></p>
+    </article>
+  </main>
+</body>
+</html>
