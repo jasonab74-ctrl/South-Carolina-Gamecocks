@@ -1,32 +1,41 @@
-app = "gamecocks-fb-bot"
-primary_region = "atl"
+name: Deploy to Fly
 
-[build]
-  dockerfile = "Dockerfile"
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-[env]
-  PORT = "8080"
-  ENABLE_AUTO_COLLECT = "1"
+env:
+  FLY_APP_NAME: gamecocks-fb-bot   # must match app in fly.toml
 
-# HTTP service (v2 style)
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 1
-  processes = ["web"]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-[checks]
-  [checks.http]
-    port = 8080
-    type = "http"
-    interval = "15s"
-    timeout = "2s"
-    method = "GET"
-    path = "/health"
+      - name: Setup Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1
 
-# Process groups
-[processes]
-  web = "gunicorn -w 4 -b 0.0.0.0:8080 server:app"
-  worker = "bash -lc 'while true; do python3 collect.py; sleep 1800; done'"
+      - name: Ensure app exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if flyctl apps show "$FLY_APP_NAME" >/dev/null 2>&1; then
+            echo "App exists"
+          else
+            echo "Creating $FLY_APP_NAME"
+            flyctl apps create "$FLY_APP_NAME"
+          fi
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only --app "$FLY_APP_NAME"
+
+      - name: Scale web + worker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME"
