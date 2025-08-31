@@ -1,12 +1,10 @@
 name: Deploy to Fly
-
 on:
-  push:
-    branches: [ main ]
+  push: { branches: [ main ] }
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot   # MUST match fly.toml app
+  FLY_APP_NAME: gamecocks-fb-bot   # must match fly.toml `app`
   FLY_REGION: atl
 
 jobs:
@@ -19,26 +17,22 @@ jobs:
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      # Ensure the app exists (first deploys in CI can fail without this)
-      - name: Create app if missing
+      # Create app if it doesn't exist (no jq needed)
+      - name: Ensure app exists
+        shell: bash
+        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
         run: |
-          set -e
-          if ! flyctl apps list --json | jq -r '.[].Name' | grep -qx "$FLY_APP_NAME"; then
-            echo "App not found; creating $FLY_APP_NAME"
-            flyctl apps create "$FLY_APP_NAME" --region "$FLY_REGION"
+          if flyctl apps show "$FLY_APP_NAME" >/dev/null 2>&1; then
+            echo "App exists."
           else
-            echo "App $FLY_APP_NAME already exists"
+            echo "Creating app $FLY_APP_NAME in $FLY_REGION"
+            flyctl apps create "$FLY_APP_NAME" --region "$FLY_REGION"
           fi
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Deploy
+        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
         run: flyctl deploy --remote-only --app "$FLY_APP_NAME" --region "$FLY_REGION"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      # Bring up the background collector process group
-      - name: Ensure web + worker machines
+      - name: Scale web + worker
+        env: { FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} }
         run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
