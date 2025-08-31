@@ -1,7 +1,7 @@
 # South Carolina Gamecocks Football — quick links + dynamic feeds
 
 STATIC_LINKS = [
-    {"label": "Fight Song", "url": "/fight-song"},  # handled as a play/pause button on the homepage
+    {"label": "Fight Song", "url": "/fight-song"},
     {"label": "Betting", "url": "https://www.espn.com/chalk/"},
     {"label": "South Carolina — Official", "url": "https://gamecocksonline.com/sports/football/"},
     {"label": "Schedule", "url": "https://gamecocksonline.com/sports/football/schedule/"},
@@ -19,17 +19,22 @@ STATIC_LINKS = [
     {"label": "YouTube — ESPN CFB", "url": "https://www.youtube.com/@ESPNCFB"},
 ]
 
-# High-signal feeds first; Google News variants tend to be the most reliable
+# High-signal feeds first; add Bing News RSS for redundancy
 FEEDS = [
+    # Google News variants
     {"name": "Google News — Gamecocks Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — South Carolina Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — Gamecocks", "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — Shane Beamer", "url": "https://news.google.com/rss/search?q=%22Shane+Beamer%22&hl=en-US&gl=US&ceid=US:en"},
 
+    # Bing News (often returns items when Google pauses a topic)
+    {"name": "Bing News — Gamecocks Football", "url": "https://www.bing.com/news/search?q=South+Carolina+Gamecocks+football&format=rss"},
+    {"name": "Bing News — Shane Beamer", "url": "https://www.bing.com/news/search?q=Shane+Beamer&format=rss"},
+
     # Local/Blog feeds with proper RSS
     {"name": "Garnet & Black Attack", "url": "https://www.garnetandblackattack.com/rss/index.xml"},
     {"name": "The State — USC Football", "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss"},
 
-    # National (collector filters down to SC items)
+    # National (filtered down by collector)
     {"name": "ESPN — CFB News", "url": "https://www.espn.com/espn/rss/ncf/news"},
 ]
