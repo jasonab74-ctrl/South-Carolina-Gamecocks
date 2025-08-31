@@ -2,12 +2,11 @@ name: Deploy to Fly
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot   # MUST match app in fly.toml
+  FLY_APP_NAME: gamecocks-fb-bot   # MUST match fly.toml
 
 jobs:
   deploy:
@@ -19,40 +18,32 @@ jobs:
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      # Create the app every time (safe if it already exists)
       - name: Create app (idempotent)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -e
-          flyctl apps create "$FLY_APP_NAME" || echo "App may already exist"
-
-      # Sync COLLECT_TOKEN only if you've set it as a GitHub secret
-      - name: Sync COLLECT_TOKEN to Fly (optional)
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
-        run: |
-          if [ -n "$COLLECT_TOKEN_SECRET" ]; then
-            echo "Setting COLLECT_TOKEN in Fly…"
-            flyctl secrets set COLLECT_TOKEN="$COLLECT_TOKEN_SECRET" --app "$FLY_APP_NAME" --yes
-          else
-            echo "No COLLECT_TOKEN secret set; skipping"
-          fi
+          flyctl apps create "$FLY_APP_NAME" || echo "App already exists"
 
       - name: Deploy
+        id: deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only --app "$FLY_APP_NAME"
+        run: |
+          set -e
+          flyctl deploy --remote-only --app "$FLY_APP_NAME" --wait-timeout 10m
 
-      # Add --yes for non-interactive CI
-      - name: Scale web + worker
+      # Always show recent app logs & status so we can see why deploy would fail
+      - name: Show Fly status (always)
+        if: always()
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME" --yes
+        run: |
+          flyctl status -a "$FLY_APP_NAME" || true
+          flyctl logs   -a "$FLY_APP_NAME" --since 15m || true
 
-      # Kick off an initial collect so items.json isn’t empty
-      - name: Kick off initial collect
+      # Kick a first collect (never fail on this)
+      - name: Kick off initial collect (best effort)
         env:
           COLLECT_TOKEN_SECRET: ${{ secrets.COLLECT_TOKEN }}
         run: |
