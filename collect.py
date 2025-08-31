@@ -2,10 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-Collector for South Carolina Gamecocks.
-- Requests with real User-Agent (some feeds block default fetchers)
-- Two-stage filtering: strict first, then fallback to avoid empty lists
-- Writes items.json consumed by the Flask app
+Safe-mode collector for South Carolina Gamecocks.
+Strategy:
+  1) Fetch feeds with a real User-Agent.
+  2) Keep items that clearly match Gamecocks/SC football (strict).
+  3) If < 12 items, add a fallback pass (broader SC/Gamecocks, still excluding other sports).
+  4) If STILL low (< 6), keep latest items from Google/Bing feeds without filtering.
+This guarantees items.json is never empty while staying on-topic first.
 """
 
 import os
@@ -16,16 +19,14 @@ from urllib.parse import urlparse
 
 import feedparser
 import requests
-
 from feeds import FEEDS
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
-TIMEOUT = 20
+UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+HEADERS = {"User-Agent": UA, "Accept": "application/xml,text/xml,application/rss+xml,*/*;q=0.8"}
+TIMEOUT = 25
 
+# --- Patterns ---
 STRONG_ANY = [
     r"\bgamecocks?\b",
     r"\bshane\s+beamer\b",
@@ -33,34 +34,24 @@ STRONG_ANY = [
     r"\bspurs\s*up\b",
     r"\bgamecock\s*central\b",
 ]
-
-SC_OR_USC = [
-    r"\bsouth\s*carolina\b",
-    r"\busc\b",  # guarded against USC Trojans below
-]
-
-FOOTBALL_TERMS = [
-    r"\bfootball\b", r"\bcoach(es|ing)?\b", r"\bquarterback|qb\b",
+SC_OR_USC = [r"\bsouth\s*carolina\b", r"\busc\b"]
+FOOTBALL = [
+    r"\bfootball\b", r"\bcoach(?:es|ing)?\b", r"\bquarterback|qb\b",
     r"\bdefense|offense\b", r"\bsec\b", r"\bncaa\b",
     r"\brecruit|\bcommit|\btransfer portal\b", r"\bspring game\b", r"\bdepth chart\b",
 ]
-
 EXCLUDE_OTHER_SPORTS = [
     r"\bwomen'?s\b", r"\bwbb\b",
     r"\bbasketball\b", r"\bbaseball\b",
     r"\bsoftball\b", r"\bvolleyball\b", r"\bsoccer\b",
     r"\btrack\b", r"\bgolf\b",
 ]
-
-NEGATIVE_USC = [r"\btrojans\b", r"\blincoln\s+riley\b", r"\busc\s+trojans\b"]
-
+NEGATIVE_USC = [r"\btrojans\b", r"\blincoln\s+riley\b", r"\busc\s+trojans\b"]  # guard vs SoCal
 
 def _strip_html(s: str) -> str:
     return re.sub(r"<.*?>", "", s or "")
 
-
-def _fetch_and_parse(url: str):
-    """Fetch via requests for compatibility, then parse with feedparser."""
+def _fetch(url: str):
     try:
         r = requests.get(url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True)
         r.raise_for_status()
@@ -68,38 +59,26 @@ def _fetch_and_parse(url: str):
     except Exception:
         return feedparser.parse(url)
 
-
-def _matches_any(patterns, text) -> bool:
-    return any(re.search(p, text, flags=re.I) for p in patterns)
-
-
-def _strict_keep(text: str) -> bool:
-    # Exclude other sports
-    if _matches_any(EXCLUDE_OTHER_SPORTS, text):
+def _keep_strict(text: str) -> bool:
+    if any(re.search(p, text, re.I) for p in EXCLUDE_OTHER_SPORTS):
         return False
-    # Very strong tokens
-    if _matches_any(STRONG_ANY, text):
+    if any(re.search(p, text, re.I) for p in STRONG_ANY):
         return True
-    # SC/USC with football context (and not Trojans)
-    if _matches_any(SC_OR_USC, text):
-        if _matches_any(NEGATIVE_USC, text):
+    if any(re.search(p, text, re.I) for p in SC_OR_USC):
+        if any(re.search(p, text, re.I) for p in NEGATIVE_USC):
             return False
-        if _matches_any(FOOTBALL_TERMS, text):
+        if any(re.search(p, text, re.I) for p in FOOTBALL):
             return True
     return False
 
-
-def _fallback_keep(text: str) -> bool:
-    if _matches_any(EXCLUDE_OTHER_SPORTS, text):
+def _keep_fallback(text: str) -> bool:
+    if any(re.search(p, text, re.I) for p in EXCLUDE_OTHER_SPORTS):
         return False
-    if _matches_any(STRONG_ANY, text) or _matches_any(SC_OR_USC, text):
-        if _matches_any(NEGATIVE_USC, text):
-            return False
-        return True
-    return False
+    if any(re.search(p, text, re.I) for p in NEGATIVE_USC):
+        return False
+    return any(re.search(p, text, re.I) for p in (STRONG_ANY + SC_OR_USC + FOOTBALL))
 
-
-def _normalize(feed_name: str, feed_url: str, e) -> dict:
+def _normalize(feed_name, feed_url, e):
     title = (e.get("title") or "").strip()
     link = e.get("link") or e.get("id") or ""
     summary = (e.get("summary") or e.get("description") or "").strip()
@@ -113,55 +92,57 @@ def _normalize(feed_name: str, feed_url: str, e) -> dict:
         "published": published,
     }
 
+def _dedupe(lst):
+    seen, out = set(), []
+    for it in lst:
+        k = it["link"] or (it["title"], it["source"])
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(it)
+    return out
 
 def collect(items_path: str) -> dict:
-    items_strict = []
-    items_raw = []
+    raw = []
+    keep = []
 
     for f in FEEDS:
         name, url = f.get("name", "Unknown"), f.get("url", "")
-        parsed = _fetch_and_parse(url)
+        parsed = _fetch(url)
         for e in parsed.get("entries", []):
             it = _normalize(name, url, e)
-            items_raw.append(it)
-            text = f"{it['title']} {it['summary']}".lower()
-            if _strict_keep(text):
-                items_strict.append(it)
+            raw.append(it)
+            txt = f"{it['title']} {it['summary']}".lower()
+            if _keep_strict(txt):
+                keep.append(it)
 
-    # Dedupe helper
-    def _dedupe(lst):
-        seen, out = set(), []
-        for it in lst:
-            k = it["link"] or (it["title"], it["source"])
-            if k in seen:
-                continue
-            seen.add(k)
-            out.append(it)
-        return out
+    keep = _dedupe(keep)
 
-    items = _dedupe(items_strict)
-
-    # Fallback: if still light, add SC/GC mentions from raw
-    THRESH = 12
-    if len(items) < THRESH:
+    # Fallback layers
+    if len(keep) < 12:
         extra = []
-        for it in items_raw:
-            t = f"{it['title']} {it['summary']}".lower()
-            if _fallback_keep(t):
+        for it in raw:
+            txt = f"{it['title']} {it['summary']}".lower()
+            if _keep_fallback(txt):
                 extra.append(it)
-        items = _dedupe(items + extra)
+        keep = _dedupe(keep + extra)
 
-    # Final sort
-    items.sort(key=lambda x: x.get("published", ""), reverse=True)
+    if len(keep) < 6:
+        # Absolute safety net: take latest from Google/Bing feeds regardless of filters
+        for it in raw:
+            if "news.google.com" in it["source_url"] or "bing.com/news" in it["source_url"]:
+                keep.append(it)
+        keep = _dedupe(keep)
+
+    keep.sort(key=lambda x: x.get("published", ""), reverse=True)
 
     payload = {
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-        "items": items[:250],
+        "items": keep[:250],
     }
     with open(items_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return payload
-
 
 if __name__ == "__main__":
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
