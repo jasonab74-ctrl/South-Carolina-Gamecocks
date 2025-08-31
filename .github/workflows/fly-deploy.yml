@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  FLY_APP_NAME: gamecocks-fb-bot
+  FLY_APP_NAME: gamecocks-fb-bot   # MUST match fly.toml app
   FLY_REGION: atl
 
 jobs:
@@ -19,13 +19,26 @@ jobs:
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@v1
 
+      # Ensure the app exists (first deploys in CI can fail without this)
+      - name: Create app if missing
+        run: |
+          set -e
+          if ! flyctl apps list --json | jq -r '.[].Name' | grep -qx "$FLY_APP_NAME"; then
+            echo "App not found; creating $FLY_APP_NAME"
+            flyctl apps create "$FLY_APP_NAME" --region "$FLY_REGION"
+          else
+            echo "App $FLY_APP_NAME already exists"
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - name: Deploy
         run: flyctl deploy --remote-only --app "$FLY_APP_NAME" --region "$FLY_REGION"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      # Bring up the background collector process group
       - name: Ensure web + worker machines
-        run: |
-          flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME"
+        run: flyctl scale count web=1 worker=1 --app "$FLY_APP_NAME"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
