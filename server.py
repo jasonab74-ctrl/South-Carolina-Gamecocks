@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+"""
+South Carolina Gamecocks — Football Feed
+- Auto-collects on first load if items.json is empty (server-side)
+- Adds /collect-open (GET, no token) for first-visit bootstrap from the browser
+- /collect (POST) still supports optional COLLECT_TOKEN
+- /debug-collect to see count/sample quickly
+- /fight-song page; audio at static/fight-song.mp3
+"""
+
 import os
 import json
 from datetime import datetime, timezone
 from flask import Flask, render_template, send_file, jsonify, request, abort
-from threading import Thread
 
 from feeds import FEEDS, STATIC_LINKS
-import collect as collector  # collector.collect(items_path) -> {"updated", "items": [...]}
+import collect as collector  # collector.collect() writes items.json
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ITEMS_PATH = os.environ.get("ITEMS_PATH", os.path.join(APP_DIR, "items.json"))
-COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")  # optional
+COLLECT_TOKEN = os.environ.get("COLLECT_TOKEN", "")
+AUTO_COLLECT_ON_EMPTY = os.environ.get("AUTO_COLLECT_ON_EMPTY", "1") == "1"
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -32,7 +41,13 @@ def _load_items():
 @app.route("/")
 def index():
     data = _load_items()
-    # No synchronous collect here (prevents proxy timeouts / “cycling”)
+    # Server-side safety net (best effort)
+    if AUTO_COLLECT_ON_EMPTY and not data.get("items"):
+        try:
+            data = collector.collect(ITEMS_PATH)
+        except Exception as e:
+            # keep serving the page; client will call /collect-open next
+            print("[collect error]", e)
     return render_template(
         "index.html",
         items=data.get("items", []),
@@ -56,28 +71,30 @@ def health():
 
 # ----- Collect endpoints -----
 
-def _collect_in_thread():
-    try:
-        collector.collect(ITEMS_PATH)
-    except Exception as e:
-        print("[collect thread error]", e)
+# Open bootstrap for first visit (no token, GET allowed)
+@app.route("/collect-open")
+def collect_open():
+    out = collector.collect(ITEMS_PATH)
+    return jsonify({"ok": True, "count": len(out.get("items", [])), "updated": out.get("updated")})
 
-
-@app.route("/collect-now")
-def collect_now_public():
-    """Public, non-blocking collect (used by homepage JS)."""
-    Thread(target=_collect_in_thread, daemon=True).start()
-    return jsonify({"ok": True, "started": True})
-
-
+# Protected collect (POST) for CI/cron
 @app.route("/collect", methods=["POST"])
-def collect_protected():
-    """Protected (tokened) collect, if you want to hit from CI."""
+def run_collect():
     token = request.headers.get("X-Collect-Token", "")
     if COLLECT_TOKEN and token != COLLECT_TOKEN:
         abort(401, "unauthorized")
-    Thread(target=_collect_in_thread, daemon=True).start()
-    return jsonify({"ok": True, "started": True})
+    out = collector.collect(ITEMS_PATH)
+    return jsonify({"ok": True, "count": len(out.get("items", [])), "updated": out.get("updated")})
+
+# Quick debug (GET)
+@app.route("/debug-collect")
+def debug_collect():
+    t = request.args.get("token", "")
+    if COLLECT_TOKEN and t != COLLECT_TOKEN:
+        abort(401, "unauthorized")
+    out = collector.collect(ITEMS_PATH)
+    sample = [it.get("title") for it in out.get("items", [])[:10]]
+    return jsonify({"ok": True, "count": len(out.get("items", [])), "sample": sample})
 
 
 # ----- Fight song -----
