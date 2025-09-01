@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-South Carolina Gamecocks — Football Feed (failsafe + compact cards)
+South Carolina Gamecocks — Football Feed (failsafe + tidy cards)
 - Single file; in-memory only; endpoints: /  /items.json  /collect-open  /debug-collect  /health
 - Strong SC/Gamecocks football filter
-- Light-garnet buttons, Sources dropdown, full-width search
-- NEW: compact, cleaner article cards (softer accent, tighter spacing, 3-line summary clamp,
-       domain chip instead of noisy feed names, entity cleanup)
+- Light-garnet buttons with slightly higher contrast
+- Clean article cards: title link only (no extra "Read"), neat meta row (domain chip + date)
+- Full-width search with suggestions
 - Auto-update every 3 minutes with “Refresh” banner (newest first)
 """
 
@@ -16,6 +16,8 @@ import threading
 from datetime import datetime, timezone
 from typing import List, Dict
 import html as _html
+import re
+from urllib.parse import urlparse
 
 import requests
 import feedparser
@@ -59,11 +61,17 @@ def _http_get(url: str) -> bytes:
     return r.content
 
 def _clean_text(s: str) -> str:
-    import re
     s = _html.unescape(s or "")
     s = re.sub(r"<.*?>", "", s)          # strip tags
     s = s.replace("\xa0", " ").strip()   # nbsp → space
     return s
+
+def _domain_from(link: str) -> str:
+    try:
+        host = urlparse(link).netloc.lower()
+        return re.sub(r"^www\.", "", host)
+    except Exception:
+        return ""
 
 def _norm(feed_name: str, feed_url: str, e) -> Dict:
     title = _clean_text(e.get("title") or "")
@@ -79,6 +87,7 @@ def _norm(feed_name: str, feed_url: str, e) -> Dict:
     return {
         "source": feed_name,
         "source_url": feed_url,
+        "domain": _domain_from(link),
         "title": title,
         "link": link,
         "summary": summary[:400],
@@ -89,7 +98,8 @@ def _norm(feed_name: str, feed_url: str, e) -> Dict:
 
 # filter: SC/Gamecocks football only
 POS_STRONG = ["gamecocks", "shane beamer", "williams-brice", "gamecockcentral", "spurs up"]
-POS_FB = ["football","cfb","sec","depth chart","spring game","recruit","commit","transfer portal","qb","quarterback","wide receiver","defense","offense","coach","coaching","gameday"]
+POS_FB = ["football","cfb","sec","depth chart","spring game","recruit","commit",
+          "transfer portal","qb","quarterback","wide receiver","defense","offense","coach","coaching","gameday"]
 NEG_UNC = ["north carolina","tar heels","unc "]
 NEG_TROJANS = ["usc trojans","lincoln riley","southern cal","so cal"]
 NEG_OTHER_SPORTS = ["women's","wbb","basketball","baseball","softball","volleyball","soccer","track","golf"]
@@ -141,7 +151,7 @@ def fetch_now() -> Dict:
         _LAST_FETCH_TS = time.time()
         return {"updated": UPDATED, "count": len(ITEMS)}
 
-# ---------- routes (inline HTML/CSS/JS for safety & speed) ----------
+# ---------- page ----------
 PAGE = """
 <!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -151,7 +161,9 @@ PAGE = """
 :root{
   --garnet:#73000A; --g700:#4f0007;
   --bg:#fafafa; --card:#fff; --muted:#555; --bd:#eaeaea; --shadow:0 10px 20px rgba(0,0,0,.06);
-  --pill-bg:#fff5f6; --pill-bd:#f0ccd1; --accent:#c48a92;
+  /* slightly increased contrast for pills */
+  --pill-bg:#ffe9ed; --pill-bd:#f3c6cf; --pill-bg-hover:#ffe2e7;
+  --accent:#c48a92;
 }
 *{box-sizing:border-box} body{margin:0;background:var(--bg);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111}
 .header{background:linear-gradient(90deg,var(--garnet),var(--g700));color:#fff;padding:14px 16px}
@@ -160,6 +172,7 @@ h1{margin:0;font-size:20px}.sub{opacity:.95;font-size:12px}
 
 .quick{display:flex;gap:10px;flex-wrap:wrap;padding:10px 12px}
 .pill{display:inline-block;padding:7px 14px;border-radius:999px;background:var(--pill-bg);border:1px solid var(--pill-bd);font-weight:800;text-decoration:none;color:#111;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.pill:hover{background:var(--pill-bg-hover)}
 .pill-primary{background:var(--garnet);color:#fff;border-color:var(--garnet)}
 .pill-primary.on{background:#a30012}
 
@@ -181,22 +194,19 @@ h1{margin:0;font-size:20px}.sub{opacity:.95;font-size:12px}
 main{max-width:900px;margin:14px auto;padding:0 12px}
 .notice{background:#fff3cd;border:1px solid #ffe08a;padding:10px 12px;border-radius:10px;margin-bottom:10px;display:none}
 
-/* === Compact card design === */
+/* === Tidy compact card === */
 .card{
   background:var(--card); border:1px solid var(--bd); border-radius:14px;
-  padding:12px 12px 10px 12px; margin:10px 0; box-shadow:var(--shadow);
+  padding:12px; margin:10px 0; box-shadow:var(--shadow);
   position:relative; overflow:hidden;
 }
 .card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
   background:linear-gradient(var(--garnet),var(--g700)); opacity:.85;}
 .title{font-size:17px; font-weight:900; line-height:1.25; color:#100; text-decoration:none; margin:0}
 .summary{margin:6px 0 0; color:#202; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden}
-.meta{margin-top:8px; color:var(--muted); font-size:13px; display:flex; align-items:center; justify-content:space-between; gap:8px}
-.meta-left{display:flex; align-items:center; gap:8px; min-width:0}
+.meta{margin-top:10px; color:var(--muted); font-size:13px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
 .chip{background:#fff; border:1px solid var(--accent); color:#333; padding:2px 8px; border-radius:999px; font-weight:700; font-size:12px; white-space:nowrap}
-.time{white-space:nowrap}
-.meta-right a{color:#111; text-decoration:none; font-weight:800}
-.meta-right a:hover{text-decoration:underline}
+.time{white-space:nowrap; opacity:.9}
 
 .empty{padding:28px 12px;text-align:center;color:var(--muted)}
 footer{max-width:900px;margin:20px auto 30px;padding:0 12px;color:var(--muted)}
@@ -259,11 +269,8 @@ footer a:hover{text-decoration:underline}
         <a class="title" href="{{ it.link }}" target="_blank" rel="noopener">{{ it.title }}</a>
         {% if it.summary %}<p class="summary">{{ it.summary }}</p>{% endif %}
         <div class="meta">
-          <div class="meta-left">
-            <span class="chip">{{ it.source }}</span>
-            {% if it.published %}<time class="time">{{ it.published }}</time>{% endif %}
-          </div>
-          <div class="meta-right"><a href="{{ it.link }}" target="_blank" rel="noopener">Read →</a></div>
+          <span class="chip">{{ it.domain or it.source }}</span>
+          {% if it.published %}<time class="time">{{ it.published }}</time>{% endif %}
         </div>
       </article>
       {% endfor %}
@@ -295,13 +302,11 @@ footer a:hover{text-decoration:underline}
     audio.addEventListener('play', ()=>set(true));
   }
 
-  // Utilities
   const feedEl = document.getElementById('feed');
   const updatedEl = document.getElementById('updated');
-
   function domainFrom(u){ try{ return new URL(u).hostname.replace(/^www\\./,''); }catch(e){ return ''; } }
 
-  // Render compact cards (uses domain in chip for cleaner look)
+  // Render cards without the extra "Read" label
   function render(items, updated){
     updatedEl.textContent = updated || updatedEl.textContent;
     feedEl.innerHTML = (items||[]).map(it => `
@@ -309,11 +314,8 @@ footer a:hover{text-decoration:underline}
         <a class="title" href="${it.link}" target="_blank" rel="noopener">${it.title}</a>
         ${it.summary ? `<p class="summary">${it.summary}</p>` : ''}
         <div class="meta">
-          <div class="meta-left">
-            <span class="chip">${domainFrom(it.link) || it.source || 'Source'}</span>
-            ${it.published ? `<time class="time">${it.published}</time>` : ''}
-          </div>
-          <div class="meta-right"><a href="${it.link}" target="_blank" rel="noopener">Read →</a></div>
+          <span class="chip">${it.domain || domainFrom(it.link) || it.source || 'Source'}</span>
+          ${it.published ? `<time class="time">${it.published}</time>` : ''}
         </div>
       </article>
     `).join('') || '<div class="empty">No articles.</div>';
