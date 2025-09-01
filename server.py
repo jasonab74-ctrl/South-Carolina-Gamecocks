@@ -2,21 +2,22 @@
 # -*- coding: utf-8 -*-
 
 """
-South Carolina Gamecocks — Football Feed (failsafe + expanded sources)
+South Carolina Gamecocks — Football Feed (friendly time labels)
 - Single file; in-memory; endpoints: /  /items.json  /collect-open  /debug-collect  /health
 - Strong SC/Gamecocks football filter
-- Light-garnet pills, compact cards, search with suggestions
+- Light-garnet pills, compact/clean cards, search with suggestions
 - Auto-update every 3 minutes (newest first)
-- CHANGE: Added more reliable sources (Google/Bing scoped queries + Reddit RSS)
+- CHANGE: Human-friendly time labels ("Today • 3:45 PM", "Yesterday • 8:12 AM", "Sep 1 • 10:31 AM")
 """
 
 import time
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict
 import html as _html
 import re
 from urllib.parse import urlparse
+from email.utils import parsedate_to_datetime
 
 import requests
 import feedparser
@@ -29,9 +30,8 @@ USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 HTTP_TIMEOUT = 20
 
-# Expanded feeds (scoped Google/Bing + site RSS where stable)
+# Expanded feeds
 FEEDS: List[Dict] = [
-    # Broad team queries
     {"name": "Google News — Gamecocks Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — South Carolina Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — Gamecocks", "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
@@ -40,7 +40,6 @@ FEEDS: List[Dict] = [
     {"name": "Bing News — South Carolina Football", "url": "https://www.bing.com/news/search?q=%22South+Carolina%22+football&format=rss"},
     {"name": "Bing News — Shane Beamer", "url": "https://www.bing.com/news/search?q=Shane+Beamer&format=rss"},
 
-    # Scoped to key outlets (helps surface team-specific posts)
     {"name": "Google — ESPN (SC Football)", "url": "https://news.google.com/rss/search?q=site:espn.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google — Yahoo Sports (SC Football)", "url": "https://news.google.com/rss/search?q=site:sports.yahoo.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google — CBS Sports (SC Football)", "url": "https://news.google.com/rss/search?q=site:cbssports.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
@@ -50,12 +49,10 @@ FEEDS: List[Dict] = [
     {"name": "Google — Greenville News (SC Football)", "url": "https://news.google.com/rss/search?q=site:greenvilleonline.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google — Garnet & Black Attack", "url": "https://news.google.com/rss/search?q=site:garnetandblackattack.com+South+Carolina&hl=en-US&gl=US&ceid=US:en"},
 
-    # Native RSS where stable
     {"name": "Garnet & Black Attack (RSS)", "url": "https://www.garnetandblackattack.com/rss/index.xml"},
     {"name": "The State — USC Football (RSS)", "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss"},
     {"name": "Reddit — r/Gamecocks (RSS)", "url": "https://www.reddit.com/r/Gamecocks/.rss"},
 
-    # National CFB fallback
     {"name": "ESPN — CFB News", "url": "https://www.espn.com/espn/rss/ncf/news"},
 ]
 
@@ -79,8 +76,8 @@ def _http_get(url: str) -> bytes:
 
 def _clean_text(s: str) -> str:
     s = _html.unescape(s or "")
-    s = re.sub(r"<.*?>", "", s)          # strip tags
-    s = s.replace("\xa0", " ").strip()   # nbsp → space
+    s = re.sub(r"<.*?>", "", s)
+    s = s.replace("\xa0", " ").strip()
     return s
 
 def _domain_from(link: str) -> str:
@@ -89,6 +86,34 @@ def _domain_from(link: str) -> str:
         return re.sub(r"^www\.", "", host)
     except Exception:
         return ""
+
+def _fmt_clock(dt: datetime) -> str:
+    h = dt.strftime("%I").lstrip("0") or "0"
+    return f"{h}:{dt.strftime('%M')} {dt.strftime('%p')}"
+
+def _nice_when(ts: int, raw: str) -> str:
+    """Return 'Today • 3:45 PM', 'Yesterday • 8:12 AM', or 'Sep 1 • 10:31 AM' (UTC-based)."""
+    dt = None
+    if ts and ts > 0:
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    else:
+        try:
+            dtp = parsedate_to_datetime(raw)
+            if dtp is not None:
+                dt = dtp.astimezone(timezone.utc) if dtp.tzinfo else dtp.replace(tzinfo=timezone.utc)
+        except Exception:
+            dt = None
+    if not dt:
+        return raw or ""
+    today = datetime.now(timezone.utc).date()
+    d = dt.date()
+    if d == today:
+        prefix = "Today"
+    elif (today - d) == timedelta(days=1):
+        prefix = "Yesterday"
+    else:
+        prefix = dt.strftime("%b ") + str(int(dt.strftime("%d")))  # drop leading zero
+    return f"{prefix} • {_fmt_clock(dt)}"
 
 def _norm(feed_name: str, feed_url: str, e) -> Dict:
     title = _clean_text(e.get("title") or "")
@@ -109,6 +134,7 @@ def _norm(feed_name: str, feed_url: str, e) -> Dict:
         "link": link,
         "summary": summary[:400],
         "published": published,
+        "when": _nice_when(ts, published),  # <— friendly time
         "_ts": ts,
         "_txt": f"{title} {summary}".lower(),
     }
@@ -168,7 +194,7 @@ def fetch_now() -> Dict:
         _LAST_FETCH_TS = time.time()
         return {"updated": UPDATED, "count": len(ITEMS)}
 
-# ---------- page (unchanged visuals from your tidy version) ----------
+# ---------- page ----------
 PAGE = """
 <!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -284,7 +310,7 @@ footer a:hover{text-decoration:underline}
         {% if it.summary %}<p class="summary">{{ it.summary }}</p>{% endif %}
         <div class="meta">
           <span class="chip">{{ it.domain or it.source }}</span>
-          {% if it.published %}<time class="time">{{ it.published }}</time>{% endif %}
+          {% if it.when %}<time class="time">{{ it.when }}</time>{% endif %}
         </div>
       </article>
       {% endfor %}
@@ -328,7 +354,7 @@ footer a:hover{text-decoration:underline}
         ${it.summary ? `<p class="summary">${it.summary}</p>` : ''}
         <div class="meta">
           <span class="chip">${it.domain || domainFrom(it.link) || it.source || 'Source'}</span>
-          ${it.published ? `<time class="time">${it.published}</time>` : ''}
+          ${it.when ? `<time class="time">${it.when}</time>` : ''}
         </div>
       </article>
     `).join('') || '<div class="empty">No articles.</div>';
