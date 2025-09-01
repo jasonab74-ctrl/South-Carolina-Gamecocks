@@ -2,13 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-South Carolina Gamecocks — Football Feed (failsafe + tidy cards)
-- Single file; in-memory only; endpoints: /  /items.json  /collect-open  /debug-collect  /health
+South Carolina Gamecocks — Football Feed (failsafe + expanded sources)
+- Single file; in-memory; endpoints: /  /items.json  /collect-open  /debug-collect  /health
 - Strong SC/Gamecocks football filter
-- Light-garnet buttons with slightly higher contrast
-- Clean article cards: title link only (no extra "Read"), neat meta row (domain chip + date)
-- Full-width search with suggestions
-- Auto-update every 3 minutes with “Refresh” banner (newest first)
+- Light-garnet pills, compact cards, search with suggestions
+- Auto-update every 3 minutes (newest first)
+- CHANGE: Added more reliable sources (Google/Bing scoped queries + Reddit RSS)
 """
 
 import time
@@ -30,15 +29,33 @@ USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 HTTP_TIMEOUT = 20
 
+# Expanded feeds (scoped Google/Bing + site RSS where stable)
 FEEDS: List[Dict] = [
+    # Broad team queries
     {"name": "Google News — Gamecocks Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — South Carolina Football", "url": "https://news.google.com/rss/search?q=%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — Gamecocks", "url": "https://news.google.com/rss/search?q=Gamecocks+football&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Google News — Shane Beamer", "url": "https://news.google.com/rss/search?q=%22Shane+Beamer%22&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Bing News — Gamecocks Football", "url": "https://www.bing.com/news/search?q=South+Carolina+Gamecocks+football&format=rss"},
+    {"name": "Bing News — South Carolina Football", "url": "https://www.bing.com/news/search?q=%22South+Carolina%22+football&format=rss"},
     {"name": "Bing News — Shane Beamer", "url": "https://www.bing.com/news/search?q=Shane+Beamer&format=rss"},
+
+    # Scoped to key outlets (helps surface team-specific posts)
+    {"name": "Google — ESPN (SC Football)", "url": "https://news.google.com/rss/search?q=site:espn.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — Yahoo Sports (SC Football)", "url": "https://news.google.com/rss/search?q=site:sports.yahoo.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — CBS Sports (SC Football)", "url": "https://news.google.com/rss/search?q=site:cbssports.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — 247Sports (SC)", "url": "https://news.google.com/rss/search?q=site:247sports.com+%22South+Carolina%22+Gamecocks&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — On3/GamecockCentral (SC)", "url": "https://news.google.com/rss/search?q=site:on3.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — The State (Columbia)", "url": "https://news.google.com/rss/search?q=site:thestate.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — Greenville News (SC Football)", "url": "https://news.google.com/rss/search?q=site:greenvilleonline.com+%22South+Carolina%22+football&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "Google — Garnet & Black Attack", "url": "https://news.google.com/rss/search?q=site:garnetandblackattack.com+South+Carolina&hl=en-US&gl=US&ceid=US:en"},
+
+    # Native RSS where stable
     {"name": "Garnet & Black Attack (RSS)", "url": "https://www.garnetandblackattack.com/rss/index.xml"},
     {"name": "The State — USC Football (RSS)", "url": "https://www.thestate.com/sports/college/university-of-south-carolina/usc-football/?outputType=amp&type=rss"},
+    {"name": "Reddit — r/Gamecocks (RSS)", "url": "https://www.reddit.com/r/Gamecocks/.rss"},
+
+    # National CFB fallback
     {"name": "ESPN — CFB News", "url": "https://www.espn.com/espn/rss/ncf/news"},
 ]
 
@@ -151,7 +168,7 @@ def fetch_now() -> Dict:
         _LAST_FETCH_TS = time.time()
         return {"updated": UPDATED, "count": len(ITEMS)}
 
-# ---------- page ----------
+# ---------- page (unchanged visuals from your tidy version) ----------
 PAGE = """
 <!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -161,7 +178,6 @@ PAGE = """
 :root{
   --garnet:#73000A; --g700:#4f0007;
   --bg:#fafafa; --card:#fff; --muted:#555; --bd:#eaeaea; --shadow:0 10px 20px rgba(0,0,0,.06);
-  /* slightly increased contrast for pills */
   --pill-bg:#ffe9ed; --pill-bd:#f3c6cf; --pill-bg-hover:#ffe2e7;
   --accent:#c48a92;
 }
@@ -194,7 +210,6 @@ h1{margin:0;font-size:20px}.sub{opacity:.95;font-size:12px}
 main{max-width:900px;margin:14px auto;padding:0 12px}
 .notice{background:#fff3cd;border:1px solid #ffe08a;padding:10px 12px;border-radius:10px;margin-bottom:10px;display:none}
 
-/* === Tidy compact card === */
 .card{
   background:var(--card); border:1px solid var(--bd); border-radius:14px;
   padding:12px; margin:10px 0; box-shadow:var(--shadow);
@@ -250,7 +265,6 @@ footer a:hover{text-decoration:underline}
   </details>
 </nav>
 
-<!-- full-width search bar -->
 <div class="sbar">
   <div class="suggest">
     <input id="search" type="search" placeholder="Search articles (title, summary, source)…" autocomplete="off">
@@ -306,7 +320,6 @@ footer a:hover{text-decoration:underline}
   const updatedEl = document.getElementById('updated');
   function domainFrom(u){ try{ return new URL(u).hostname.replace(/^www\\./,''); }catch(e){ return ''; } }
 
-  // Render cards without the extra "Read" label
   function render(items, updated){
     updatedEl.textContent = updated || updatedEl.textContent;
     feedEl.innerHTML = (items||[]).map(it => `
@@ -321,7 +334,7 @@ footer a:hover{text-decoration:underline}
     `).join('') || '<div class="empty">No articles.</div>';
   }
 
-  // Live auto-update (every 3 minutes)
+  // Auto-update every 3 minutes
   let lastUpdated = "{{ updated or '' }}";
   const notice = document.getElementById('notice');
   const applyBtn = document.getElementById('applyBtn');
