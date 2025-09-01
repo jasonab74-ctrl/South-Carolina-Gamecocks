@@ -37,7 +37,7 @@
 
     <section id="feed">
       {% if not items %}
-        <div class="empty" id="empty">Warming up the feed…</div>
+        <div id="warming" class="empty">Warming up the feed…</div>
       {% endif %}
       {% for it in items %}
       <article class="card">
@@ -63,29 +63,7 @@
   </footer>
 
   <script>
-    // 1) If items are empty on first load, fire a non-blocking collect
-    (async function boot(){
-      try{
-        const res = await fetch('/items.json',{cache:'no-store'});
-        const data = await res.json();
-        const hasItems = Array.isArray(data.items) && data.items.length > 0;
-        if(!hasItems){
-          // kick a background collect (no token required)
-          await fetch('/collect-now').catch(()=>{});
-          // poll items.json for ~60s until items arrive, then reload once
-          for(let i=0;i<30;i++){
-            await new Promise(r=>setTimeout(r,2000));
-            const r = await fetch('/items.json',{cache:'no-store'});
-            const d = await r.json();
-            if(Array.isArray(d.items) && d.items.length>0){ location.reload(); return; }
-          }
-          const empty = document.getElementById('empty');
-          if(empty){ empty.textContent = 'No articles yet. Check back soon.'; }
-        }
-      }catch(e){}
-    })();
-
-    // 2) Regular auto-refresh notice (5 min)
+    // Auto-refresh notice
     const updatedEl = document.getElementById('updated');
     const notice = document.getElementById('notice');
     const reloadBtn = document.getElementById('reload');
@@ -93,7 +71,7 @@
       try{
         const res = await fetch('/items.json',{cache:'no-store'});
         const data = await res.json();
-        if(updatedEl.textContent !== data.updated){
+        if(updatedEl.textContent !== data.updated && data.updated){
           notice.classList.remove('hidden');
           reloadBtn.onclick = () => location.reload();
         }
@@ -101,10 +79,11 @@
     }
     setInterval(checkForUpdates, 5*60*1000);
 
-    // 3) Fight song toggle (on-page)
-    const audio = document.getElementById('fightAudio');
-    const fsBtn = document.getElementById('fightSongBtn');
-    if (fsBtn && audio) {
+    // Fight song toggle (on-page)
+    (function(){
+      const audio = document.getElementById('fightAudio');
+      const fsBtn = document.getElementById('fightSongBtn');
+      if (!fsBtn || !audio) return;
       const setBtn = (playing) => {
         fsBtn.textContent = playing ? 'Pause Fight Song' : 'Play Fight Song';
         fsBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
@@ -120,7 +99,32 @@
       audio.addEventListener('ended', () => setBtn(false));
       audio.addEventListener('pause', () => setBtn(false));
       audio.addEventListener('play', () => setBtn(true));
-    }
+    })();
+
+    // 🔥 FIRST-VISIT BOOSTER:
+    // If there are no items rendered, call /collect-open (no token required)
+    // then reload the page automatically when ready.
+    (async function bootstrapCollect(){
+      const warming = document.getElementById('warming');
+      if (!warming) return;  // items already present
+      try{
+        warming.textContent = 'Warming up the feed… (fetching articles)';
+        const res = await fetch('/collect-open', {cache:'no-store'});
+        const data = await res.json();
+        if (data && data.ok && data.count >= 0) {
+          warming.textContent = 'Loading articles…';
+          setTimeout(() => location.reload(), 600);
+        } else {
+          warming.textContent = 'Still warming… tap to retry';
+          warming.style.cursor = 'pointer';
+          warming.onclick = bootstrapCollect;
+        }
+      }catch(e){
+        warming.textContent = 'Network hiccup. Tap to try again.';
+        warming.style.cursor = 'pointer';
+        warming.onclick = bootstrapCollect;
+      }
+    })();
   </script>
 </body>
 </html>
