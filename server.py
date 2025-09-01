@@ -2,18 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-South Carolina Gamecocks — Football Feed (failsafe + polished cards)
+South Carolina Gamecocks — Football Feed (failsafe + compact cards)
 - Single file; in-memory only; endpoints: /  /items.json  /collect-open  /debug-collect  /health
-- Tight SC/Gamecocks football filter (drops UNC/Trojans/other sports noise)
-- Quick-links with light garnet tint, Sources dropdown, full-width search with suggestions
-- Polished article cards: subtle accent bar, hover lift, source chip, tidy meta row
-- Auto-update every 3 minutes (newest first) with “Refresh” banner
+- Strong SC/Gamecocks football filter
+- Light-garnet buttons, Sources dropdown, full-width search
+- NEW: compact, cleaner article cards (softer accent, tighter spacing, 3-line summary clamp,
+       domain chip instead of noisy feed names, entity cleanup)
+- Auto-update every 3 minutes with “Refresh” banner (newest first)
 """
 
 import time
 import threading
 from datetime import datetime, timezone
 from typing import List, Dict
+import html as _html
 
 import requests
 import feedparser
@@ -56,14 +58,17 @@ def _http_get(url: str) -> bytes:
     r.raise_for_status()
     return r.content
 
-def _strip_html(s: str) -> str:
+def _clean_text(s: str) -> str:
     import re
-    return re.sub(r"<.*?>", "", s or "")
+    s = _html.unescape(s or "")
+    s = re.sub(r"<.*?>", "", s)          # strip tags
+    s = s.replace("\xa0", " ").strip()   # nbsp → space
+    return s
 
 def _norm(feed_name: str, feed_url: str, e) -> Dict:
-    title = (e.get("title") or "").strip()
+    title = _clean_text(e.get("title") or "")
     link = e.get("link") or e.get("id") or ""
-    summary = (e.get("summary") or e.get("description") or "").strip()
+    summary = _clean_text(e.get("summary") or e.get("description") or "")
     published = e.get("published") or e.get("updated") or ""
     ts = 0
     try:
@@ -76,42 +81,26 @@ def _norm(feed_name: str, feed_url: str, e) -> Dict:
         "source_url": feed_url,
         "title": title,
         "link": link,
-        "summary": _strip_html(summary)[:400],
+        "summary": summary[:400],
         "published": published,
         "_ts": ts,
         "_txt": f"{title} {summary}".lower(),
     }
 
-# filter: keep SC/Gamecocks football; drop UNC/Trojans/other sports noise
-POS_STRONG = [
-    "gamecocks", "shane beamer", "williams-brice", "gamecockcentral", "spurs up"
-]
-POS_FB = [
-    "football", "cfb", "sec", "depth chart", "spring game", "recruit", "commit",
-    "transfer portal", "qb", "quarterback", "wide receiver", "defense", "offense",
-    "coach", "coaching", "gameday"
-]
-NEG_UNC = ["north carolina", "tar heels", "unc "]
-NEG_TROJANS = ["usc trojans", "lincoln riley", "southern cal", "so cal"]
-NEG_OTHER_SPORTS = [
-    "women's", "wbb", "basketball", "baseball", "softball", "volleyball",
-    "soccer", "track", "golf"
-]
+# filter: SC/Gamecocks football only
+POS_STRONG = ["gamecocks", "shane beamer", "williams-brice", "gamecockcentral", "spurs up"]
+POS_FB = ["football","cfb","sec","depth chart","spring game","recruit","commit","transfer portal","qb","quarterback","wide receiver","defense","offense","coach","coaching","gameday"]
+NEG_UNC = ["north carolina","tar heels","unc "]
+NEG_TROJANS = ["usc trojans","lincoln riley","southern cal","so cal"]
+NEG_OTHER_SPORTS = ["women's","wbb","basketball","baseball","softball","volleyball","soccer","track","golf"]
 
 def _is_sc_football(txt: str) -> bool:
-    txt = txt.lower()
-    if any(neg in txt for neg in NEG_OTHER_SPORTS):
-        return False
-    if "usc" in txt and any(t in txt for t in NEG_TROJANS):
-        return False
-    if any(neg in txt for neg in NEG_UNC) and ("south carolina" not in txt and "gamecocks" not in txt):
-        return False
-    if any(p in txt for p in POS_STRONG):
-        return True
-    if "south carolina" in txt or "gamecocks" in txt:
-        return True if any(p in txt for p in POS_FB) else "football" in txt
-    if "usc" in txt:
-        return any(p in txt for p in POS_FB) and not any(t in txt for t in NEG_TROJANS)
+    if any(n in txt for n in NEG_OTHER_SPORTS): return False
+    if "usc" in txt and any(t in txt for t in NEG_TROJANS): return False
+    if any(n in txt for n in NEG_UNC) and ("south carolina" not in txt and "gamecocks" not in txt): return False
+    if any(p in txt for p in POS_STRONG): return True
+    if "south carolina" in txt or "gamecocks" in txt: return (any(p in txt for p in POS_FB) or "football" in txt)
+    if "usc" in txt: return any(p in txt for p in POS_FB) and not any(t in txt for t in NEG_TROJANS)
     return False
 
 def _dedupe(lst: List[Dict]) -> List[Dict]:
@@ -123,18 +112,16 @@ def _dedupe(lst: List[Dict]) -> List[Dict]:
     return out
 
 def fetch_now() -> Dict:
-    """Fetch all feeds (best-effort) and apply SC football filter. Newest first."""
     global ITEMS, UPDATED, _LAST_FETCH_TS
     with _LOCK:
         raw: List[Dict] = []
         for f in FEEDS:
-            url = f["url"]
             try:
-                content = _http_get(url)
+                content = _http_get(f["url"])
                 parsed = feedparser.parse(content)
                 name = parsed.feed.get("title", f["name"])
                 for e in parsed.get("entries", []):
-                    raw.append(_norm(name, url, e))
+                    raw.append(_norm(name, f["url"], e))
             except Exception:
                 continue
 
@@ -147,16 +134,14 @@ def fetch_now() -> Dict:
             except Exception:
                 pass
 
-        kept = [it for it in raw if _is_sc_football(it["_txt"])]
-        kept = _dedupe(kept)
+        kept = _dedupe([it for it in raw if _is_sc_football(it["_txt"])])
         kept.sort(key=lambda x: (x.get("_ts", 0), x.get("published", "")), reverse=True)
-
         ITEMS = kept[:250]
         UPDATED = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
         _LAST_FETCH_TS = time.time()
         return {"updated": UPDATED, "count": len(ITEMS)}
 
-# ---------- routes ----------
+# ---------- routes (inline HTML/CSS/JS for safety & speed) ----------
 PAGE = """
 <!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -165,58 +150,54 @@ PAGE = """
 <style>
 :root{
   --garnet:#73000A; --g700:#4f0007;
-  --bg:#fafafa; --card:#fff; --muted:#555; --bd:#e6e6e6; --sh:0 10px 20px rgba(0,0,0,.06);
-  --pill-bg:#fff5f6; --pill-bd:#f0ccd1; --accent:#d9a3aa;
+  --bg:#fafafa; --card:#fff; --muted:#555; --bd:#eaeaea; --shadow:0 10px 20px rgba(0,0,0,.06);
+  --pill-bg:#fff5f6; --pill-bd:#f0ccd1; --accent:#c48a92;
 }
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111}
 .header{background:linear-gradient(90deg,var(--garnet),var(--g700));color:#fff;padding:14px 16px}
-.brand{display:flex;gap:12px;align-items:center}
-.logo{width:44px;height:44px;border-radius:10px;background:#fff}
-h1{margin:0;font-size:20px}
-.sub{opacity:.95;font-size:12px}
+.brand{display:flex;gap:12px;align-items:center}.logo{width:44px;height:44px;border-radius:10px;background:#fff}
+h1{margin:0;font-size:20px}.sub{opacity:.95;font-size:12px}
+
 .quick{display:flex;gap:10px;flex-wrap:wrap;padding:10px 12px}
 .pill{display:inline-block;padding:7px 14px;border-radius:999px;background:var(--pill-bg);border:1px solid var(--pill-bd);font-weight:800;text-decoration:none;color:#111;box-shadow:0 1px 2px rgba(0,0,0,.04)}
 .pill-primary{background:var(--garnet);color:#fff;border-color:var(--garnet)}
 .pill-primary.on{background:#a30012}
+
 .sbar{padding:0 12px;margin-top:6px}
-.sbar input{width:100%; font:600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; padding:12px 14px; border-radius:12px; border:1px solid var(--bd); box-shadow:0 1px 2px rgba(0,0,0,.04); background:#fff}
+.sbar input{width:100%;font:600 16px/1.25 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:12px 14px;border-radius:12px;border:1px solid var(--bd);box-shadow:0 1px 2px rgba(0,0,0,.04);background:#fff}
+
 .suggest{position:relative}
 .suggest ul{position:absolute;z-index:5;left:0;right:0;list-style:none;margin:6px 0 0;padding:6px;background:#fff;border:1px solid var(--bd);border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.08);max-height:280px;overflow:auto}
 .suggest li{padding:8px 10px;border-radius:8px;cursor:pointer}
 .suggest li:hover{background:#f4f4f4}
+
 .sdropdown{position:relative}
 .sdropdown summary{list-style:none;cursor:pointer}
 .sdropdown[open] .menu{display:block}
 .menu{display:none;position:absolute;z-index:10;top:38px;left:0;background:#fff;border:1px solid var(--bd);border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,.08);min-width:260px;max-height:260px;overflow:auto;padding:6px}
 .menu a{display:block;padding:6px 10px;border-radius:8px;color:#000;text-decoration:none}
 .menu a:hover{background:#f3f3f3}
+
 main{max-width:900px;margin:14px auto;padding:0 12px}
 .notice{background:#fff3cd;border:1px solid #ffe08a;padding:10px 12px;border-radius:10px;margin-bottom:10px;display:none}
+
+/* === Compact card design === */
 .card{
-  background:var(--card);
-  border:1px solid var(--bd);
-  border-radius:14px;
-  padding:14px 14px 12px 14px;
-  margin:12px 0;
-  box-shadow:var(--sh);
-  position:relative;
-  overflow:hidden;
+  background:var(--card); border:1px solid var(--bd); border-radius:14px;
+  padding:12px 12px 10px 12px; margin:10px 0; box-shadow:var(--shadow);
+  position:relative; overflow:hidden;
 }
-.card::before{
-  content:"";
-  position:absolute;left:0;top:0;bottom:0;width:4px;
-  background:linear-gradient(var(--garnet),var(--g700));
-  opacity:.9;
-}
-.card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(0,0,0,.12);transition:transform .12s ease, box-shadow .12s ease}
-.title{font-size:18px;font-weight:900;text-decoration:none;color:#100;line-height:1.25}
-.summary{margin:6px 0 0;color:#202}
-.meta{margin-top:10px;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
-.meta-left{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0}
-.chip{background:#fff;border:1px solid var(--accent);color:#333;padding:3px 8px;border-radius:999px;font-weight:700;font-size:12px;white-space:nowrap}
-.meta-right a{color:#111;text-decoration:none;font-weight:800}
+.card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:linear-gradient(var(--garnet),var(--g700)); opacity:.85;}
+.title{font-size:17px; font-weight:900; line-height:1.25; color:#100; text-decoration:none; margin:0}
+.summary{margin:6px 0 0; color:#202; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden}
+.meta{margin-top:8px; color:var(--muted); font-size:13px; display:flex; align-items:center; justify-content:space-between; gap:8px}
+.meta-left{display:flex; align-items:center; gap:8px; min-width:0}
+.chip{background:#fff; border:1px solid var(--accent); color:#333; padding:2px 8px; border-radius:999px; font-weight:700; font-size:12px; white-space:nowrap}
+.time{white-space:nowrap}
+.meta-right a{color:#111; text-decoration:none; font-weight:800}
 .meta-right a:hover{text-decoration:underline}
+
 .empty{padding:28px 12px;text-align:center;color:var(--muted)}
 footer{max-width:900px;margin:20px auto 30px;padding:0 12px;color:var(--muted)}
 footer a{color:var(--muted);text-decoration:none}
@@ -259,7 +240,7 @@ footer a:hover{text-decoration:underline}
   </details>
 </nav>
 
-<!-- full-width search bar (own line) -->
+<!-- full-width search bar -->
 <div class="sbar">
   <div class="suggest">
     <input id="search" type="search" placeholder="Search articles (title, summary, source)…" autocomplete="off">
@@ -280,7 +261,7 @@ footer a:hover{text-decoration:underline}
         <div class="meta">
           <div class="meta-left">
             <span class="chip">{{ it.source }}</span>
-            {% if it.published %}<time>{{ it.published }}</time>{% endif %}
+            {% if it.published %}<time class="time">{{ it.published }}</time>{% endif %}
           </div>
           <div class="meta-right"><a href="{{ it.link }}" target="_blank" rel="noopener">Read →</a></div>
         </div>
@@ -308,18 +289,19 @@ footer a:hover{text-decoration:underline}
                       fbtn.classList.toggle('on',on);
                       fbtn.setAttribute('aria-pressed', on?'true':'false'); };
     set(false);
-    fbtn.onclick = async ()=>{ try{
-      if (audio.paused){ await audio.play(); set(true); } else { audio.pause(); set(false); }
-    }catch(e){} };
+    fbtn.onclick = async ()=>{ try{ if (audio.paused){ await audio.play(); set(true); } else { audio.pause(); set(false); } }catch(e){} };
     audio.addEventListener('ended', ()=>set(false));
     audio.addEventListener('pause', ()=>set(false));
     audio.addEventListener('play', ()=>set(true));
   }
 
-  // Helpers
+  // Utilities
   const feedEl = document.getElementById('feed');
   const updatedEl = document.getElementById('updated');
+
   function domainFrom(u){ try{ return new URL(u).hostname.replace(/^www\\./,''); }catch(e){ return ''; } }
+
+  // Render compact cards (uses domain in chip for cleaner look)
   function render(items, updated){
     updatedEl.textContent = updated || updatedEl.textContent;
     feedEl.innerHTML = (items||[]).map(it => `
@@ -329,7 +311,7 @@ footer a:hover{text-decoration:underline}
         <div class="meta">
           <div class="meta-left">
             <span class="chip">${domainFrom(it.link) || it.source || 'Source'}</span>
-            ${it.published ? `<time>${it.published}</time>` : ''}
+            ${it.published ? `<time class="time">${it.published}</time>` : ''}
           </div>
           <div class="meta-right"><a href="${it.link}" target="_blank" rel="noopener">Read →</a></div>
         </div>
@@ -361,7 +343,7 @@ footer a:hover{text-decoration:underline}
   }
   setInterval(()=>refresh(false), 180000);
 
-  // Search with dropdown suggestions
+  // Search with suggestions
   let cacheItems = {{ items|tojson }};
   const q = document.getElementById('search'), sugg = document.getElementById('sugg');
   function filterLocal(term){
@@ -370,13 +352,12 @@ footer a:hover{text-decoration:underline}
     const hits = cacheItems.filter(it =>
       (it.title||'').toLowerCase().includes(t) ||
       (it.summary||'').toLowerCase().includes(t) ||
-      (it.source||'').toLowerCase().includes(t)
+      (it.source||'').toLowerCase().includes(t) ||
+      (it.link||'').toLowerCase().includes(t)
     );
     sugg.innerHTML = hits.slice(0,8).map(it=>`<li data-link="${it.link}">${it.title}</li>`).join('') || `<li>No matches</li>`;
     sugg.hidden = false;
-    sugg.querySelectorAll('li[data-link]').forEach(li=>{
-      li.onclick = ()=>{ window.open(li.dataset.link,'_blank'); };
-    });
+    sugg.querySelectorAll('li[data-link]').forEach(li=>{ li.onclick = ()=>window.open(li.dataset.link,'_blank'); });
     return hits;
   }
   q.addEventListener('input', ()=>filterLocal(q.value));
@@ -384,7 +365,6 @@ footer a:hover{text-decoration:underline}
     if(e.key==='Enter'){ e.preventDefault(); render(filterLocal(q.value)||[], null); sugg.hidden = true; }
     if(e.key==='Escape'){ q.value=''; sugg.hidden=true; render(cacheItems,null); }
   });
-
 })();
 </script>
 """
@@ -411,7 +391,6 @@ def debug_collect():
 def health():
     return jsonify({"ok": True, "updated": UPDATED})
 
-# Warm on boot (non-blocking)
 def _warm_start():
     try: fetch_now()
     except Exception: pass
