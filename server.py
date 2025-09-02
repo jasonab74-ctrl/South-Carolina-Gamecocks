@@ -8,6 +8,7 @@ South Carolina Gamecocks — Football Feed (friendly time labels)
 - Light-garnet pills, compact/clean cards, search with suggestions
 - Auto-update every 3 minutes (newest first)
 - CHANGE: Human-friendly time labels ("Today • 3:45 PM", "Yesterday • 8:12 AM", "Sep 1 • 10:31 AM")
+- ADD-IN: static_ts() cache-buster for static assets (logo, MP3) to avoid stale caching
 """
 
 import time
@@ -21,12 +22,27 @@ from email.utils import parsedate_to_datetime
 
 import requests
 import feedparser
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, url_for
 
 app = Flask(__name__)
 
+# ---------- cache-busting helper ----------
+import os
+
+@app.context_processor
+def inject_static_ts():
+    """Adds static_ts() to Jinja: {{ static_ts('fight-song.mp3') }} -> /static/fight-song.mp3?v=<mtime>"""
+    def static_ts(filename: str) -> str:
+        path = os.path.join(app.static_folder or "static", filename)
+        try:
+            ts = int(os.stat(path).st_mtime)
+        except Exception:
+            ts = 0
+        return url_for('static', filename=filename) + (f'?v={ts}' if ts else '')
+    return dict(static_ts=static_ts)
+
 # ---------- config ----------
-USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+USER_AGENT = ("Mozilla/5.0 (X11, Linux x86_64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 HTTP_TIMEOUT = 20
 
@@ -66,8 +82,10 @@ _LOCK = threading.Lock()
 def _http_get(url: str) -> bytes:
     r = requests.get(
         url,
-        headers={"User-Agent": USER_AGENT,
-                 "Accept": "application/rss+xml,application/xml,*/*;q=0.8"},
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/rss+xml,application/xml,*/*;q=0.8"
+        },
         timeout=HTTP_TIMEOUT,
         allow_redirects=True,
     )
@@ -199,7 +217,7 @@ PAGE = """
 <!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>South Carolina Gamecocks — Football Feed</title>
-<link rel="icon" href="/static/logo.png">
+<link rel="icon" href="{{ static_ts('logo.png') }}">
 <style>
 :root{
   --garnet:#73000A; --g700:#4f0007;
@@ -256,12 +274,12 @@ footer a:hover{text-decoration:underline}
 </style>
 
 <header class="header"><div class="brand">
-  <img src="/static/logo.png" class="logo" alt="SC">
+  <img src="{{ static_ts('logo.png') }}" class="logo" alt="SC">
   <div><h1>South Carolina Gamecocks — Football Feed</h1>
   <div class="sub">Updated: <span id="updated">{{ updated or "—" }}</span></div></div>
 </div></header>
 
-<audio id="fightAudio" src="/static/fight-song.mp3" preload="auto"></audio>
+<audio id="fightAudio" src="{{ static_ts('fight-song.mp3') }}" preload="none" playsinline></audio>
 
 <nav class="quick">
   <button id="fightBtn" class="pill pill-primary" aria-pressed="false">Play Fight Song</button>
@@ -336,7 +354,14 @@ footer a:hover{text-decoration:underline}
                       fbtn.classList.toggle('on',on);
                       fbtn.setAttribute('aria-pressed', on?'true':'false'); };
     set(false);
-    fbtn.onclick = async ()=>{ try{ if (audio.paused){ await audio.play(); set(true); } else { audio.pause(); set(false); } }catch(e){} };
+    fbtn.onclick = async ()=>{ try{
+        if (audio.paused){ await audio.play(); set(true); }
+        else { audio.pause(); set(false); }
+      }catch(e){
+        console.error('Audio play error:', e);
+        alert('Could not play audio: ' + (e?.message || e));
+      }
+    };
     audio.addEventListener('ended', ()=>set(false));
     audio.addEventListener('pause', ()=>set(false));
     audio.addEventListener('play', ()=>set(true));
@@ -439,4 +464,5 @@ def _warm_start():
 threading.Thread(target=_warm_start, daemon=True).start()
 
 if __name__ == "__main__":
+    # 0.0.0.0 + fixed port for Render/Railway/Fly; change as needed
     app.run(host="0.0.0.0", port=int(8080), debug=True)
